@@ -7,11 +7,11 @@ const app = express();
 // 1. ตั้งค่า Trust Proxy สำหรับ Render HTTPS
 app.set('trust proxy', 1);
 
-// 2. Middleware อ่าน Body
+// 2. Middleware สำหรับอ่าน Body (JSON & Form Data)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. ตั้งค่า Session
+// 3. ตั้งค่า Session สำหรับ Render
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret_key',
   resave: false,
@@ -25,10 +25,10 @@ app.use(session({
   }
 }));
 
-// 4. ให้บริการไฟล์ Static ใน public
+// 4. ให้บริการไฟล์ Static ในโฟลเดอร์ public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 5. Safe-load เฉพาะ Routes ที่มีอยู่จริงในโปรเจกต์
+// 5. Safe-load Routes
 const loadRoute = (routePath, apiEndpoint) => {
   try {
     const route = require(routePath);
@@ -46,12 +46,22 @@ loadRoute('./routes/announcements', '/api/announcements');
 loadRoute('./routes/notifications', '/api/notifications');
 loadRoute('./routes/attachments', '/api/attachments');
 
-// Fallback Route
+// Fallback Route ส่งกลับไปหน้า index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// 6. Port
+// Global Error Handler ป้องกัน Server Crash
+app.use((err, req, res, next) => {
+  console.error('API Error:', err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    ok: false,
+    message: err.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์'
+  });
+});
+
+// 6. ตั้งค่า Port สำหรับ Render
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
