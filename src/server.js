@@ -4,14 +4,14 @@ const path = require('path');
 
 const app = express();
 
-// 1. ตั้งค่า Trust Proxy สำหรับ Render
+// 1. ตั้งค่า Trust Proxy สำหรับ Render HTTPS
 app.set('trust proxy', 1);
 
-// 2. Middleware อ่าน Body
+// 2. Middleware สำหรับอ่าน Body (JSON & Form Data)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. ตั้งค่า Session
+// 3. ตั้งค่า Session สำหรับ Render
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret_key',
   resave: false,
@@ -21,31 +21,37 @@ app.use(session({
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000
+    maxAge: 24 * 60 * 60 * 1000 // 1 วัน
   }
 }));
 
-// 4. เสิร์ฟไฟล์ Static ใน public
+// 4. ให้บริการไฟล์ Static ในโฟลเดอร์ public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 5. Import เฉพาะ Routes หลักที่มีอยู่แน่นอน
-const authRoutes = require('./routes/auth');
-app.use('/api/auth', authRoutes);
+// 5. Safe-load Routes (โหลดเฉพาะไฟล์ที่มีอยู่ ไม่ทำให้ระบบ Crash)
+const loadRoute = (routePath, apiEndpoint) => {
+  try {
+    const route = require(routePath);
+    app.use(apiEndpoint, route);
+    console.log(`Loaded route: ${apiEndpoint}`);
+  } catch (err) {
+    console.log(`Skipped optional route ${apiEndpoint}: ${err.message}`);
+  }
+};
 
-// ตรวจสอบเช็กไฟล์ requests route ก่อนเรียกใช้
-try {
-  const requestRoutes = require('./routes/requests');
-  app.use('/api/requests', requestRoutes);
-} catch (e) {
-  console.log('Note: requests route not loaded');
-}
+loadRoute('./routes/auth', '/api/auth');
+loadRoute('./routes/requests', '/api/requests');
+loadRoute('./routes/admin', '/api/admin');
+loadRoute('./routes/announcements', '/api/announcements');
+loadRoute('./routes/notifications', '/api/notifications');
+loadRoute('./routes/attachments', '/api/attachments');
 
-// Fallback Route
+// Fallback Route ส่งกลับไปหน้า index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// 6. Port
+// 6. ตั้งค่า Port สำหรับ Render
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
