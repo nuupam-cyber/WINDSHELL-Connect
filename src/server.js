@@ -1,53 +1,62 @@
-require('dotenv').config();
-require('express-async-errors');
-
-const path = require('path');
 const express = require('express');
 const session = require('express-session');
-const PgSession = require('connect-pg-simple')(session);
-const db = require('./db');
-const { authenticate, requirePermission } = require('./middleware/auth');
-const { errorHandler } = require('./middleware/errorHandler');
-
-if (!process.env.SESSION_SECRET) throw new Error('ต้องตั้งค่า SESSION_SECRET ใน .env');
+const cors = require('cors');
+const path = require('path');
 
 const app = express();
-app.disable('x-powered-by');
-app.use(express.json({ limit: '100kb' }));
 
-app.use(session({
-  store: new PgSession({ pool: db.pool, createTableIfMissing: true }),
-  name: 'sid',
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 8 * 60 * 60 * 1000,
-  },
+// 1. ตั้งค่า Trust Proxy สำหรับ Render (สำคัญมาก: ทำให้ Session/Cookie ผ่าน HTTPS ทำงานได้)
+app.set('trust proxy', 1);
+
+// 2. Middleware สำหรับอ่าน Body (JSON & Form Data)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 3. ตั้งค่า CORS (กรณีมี Request ข้ามโดเมน)
+app.use(cors({
+  origin: true,
+  credentials: true
 }));
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/requests', authenticate, require('./routes/requests'));
-app.use('/api/attachments', authenticate, require('./routes/attachments'));
-app.use('/api/admin', authenticate, require('./routes/admin'));
-app.use('/api/announcements', authenticate, require('./routes/announcements'));
-app.use('/api/notifications', authenticate, require('./routes/notifications'));
+// 4. ตั้งค่า Session สำหรับ Render และ HTTPS
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'default_secret_fallback',
+  resave: false,
+  saveUninitialized: false,
+  proxy: true,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // เป็น true เมื่อรันบน HTTPS บน Render
+    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax', // รองรับการส่ง Cookie
+    maxAge: 24 * 60 * 60 * 1000 // อายุ Session 1 วัน
+  }
+}));
 
-// หน้าเว็บทั่วไปจากโฟลเดอร์ public
+// 5. ให้บริการไฟล์ Static ในโฟลเดอร์ public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// หน้า Admin อยู่นอก public จึงเข้าโดยตรงไม่ได้ ต้องผ่านการตรวจสิทธิ์ก่อนส่งไฟล์
-app.get('/admin',
-  (req, res, next) => (req.session.userId ? next() : res.redirect('/')),
-  authenticate,
-  requirePermission('user.manage'),
-  (req, res) => res.sendFile(path.join(__dirname, '../private/admin.html')));
+// 6. Import และเรียกใช้ Routes ต่างๆ
+const authRoutes = require('./routes/auth');
+const requestRoutes = require('./routes/requests');
+const adminRoutes = require('./routes/admin');
+const announcementRoutes = require('./routes/announcements');
+const notificationRoutes = require('./routes/notifications');
+const attachmentRoutes = require('./routes/attachments');
 
-app.use((req, res) => res.status(404).json({ error: 'ไม่พบเส้นทาง' }));
-app.use(errorHandler);
+app.use('/api/auth', authRoutes);
+app.use('/api/requests', requestRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/attachments', attachmentRoutes);
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
+// Fallback Route ส่งกลับไปหน้าแรก
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// 7. ตั้งค่า Port สำหรับ Render
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
