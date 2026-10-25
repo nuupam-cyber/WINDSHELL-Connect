@@ -7,11 +7,11 @@ const app = express();
 // 1. ตั้งค่า Trust Proxy สำหรับ Render HTTPS
 app.set('trust proxy', 1);
 
-// 2. Middleware สำหรับอ่าน Body (JSON & Form Data)
+// 2. Middleware อ่าน Body
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. ตั้งค่า Session สำหรับ Render
+// 3. ตั้งค่า Session
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret_key',
   resave: false,
@@ -25,17 +25,17 @@ app.use(session({
   }
 }));
 
-// 4. ให้บริการไฟล์ Static ในโฟลเดอร์ public
+// 4. ให้บริการไฟล์ Static ใน public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 5. Safe-load Routes (โหลดเฉพาะไฟล์ที่มีอยู่ ไม่ทำให้ระบบ Crash)
+// 5. Safe-load Routes ทั้งหมด
 const loadRoute = (routePath, apiEndpoint) => {
   try {
     const route = require(routePath);
     app.use(apiEndpoint, route);
     console.log(`Loaded route: ${apiEndpoint}`);
   } catch (err) {
-    console.log(`Skipped optional route ${apiEndpoint}: ${err.message}`);
+    console.log(`Skipped route ${apiEndpoint}: ${err.message}`);
   }
 };
 
@@ -45,13 +45,14 @@ loadRoute('./routes/admin', '/api/admin');
 loadRoute('./routes/announcements', '/api/announcements');
 loadRoute('./routes/notifications', '/api/notifications');
 loadRoute('./routes/attachments', '/api/attachments');
+loadRoute('./routes/options', '/api/options'); // เพิ่ม options ให้ดึงรายการประเภทงานได้
 
-// Fallback Route ส่งกลับไปหน้า index.html
+// Fallback Route
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// 6. ตั้งค่า Port สำหรับ Render
+// 6. Port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
