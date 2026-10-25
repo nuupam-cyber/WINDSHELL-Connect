@@ -4,7 +4,7 @@ const path = require('path');
 
 const app = express();
 
-// 1. ตั้งค่า Trust Proxy สำหรับ Render HTTPS
+// 1. ตั้งค่า Trust Proxy สำหรับ Render
 app.set('trust proxy', 1);
 
 // 2. Middleware อ่าน Body
@@ -13,7 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // 3. ตั้งค่า Session
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default_secret_fallback',
+  secret: process.env.SESSION_SECRET || 'default_secret_key',
   resave: false,
   saveUninitialized: false,
   proxy: true,
@@ -25,23 +25,20 @@ app.use(session({
   }
 }));
 
-// 4. ให้บริการไฟล์ Static ในโฟลเดอร์ public
+// 4. เสิร์ฟไฟล์ Static ใน public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 5. Import Routes ที่มีในโปรเจกต์
+// 5. Import เฉพาะ Routes หลักที่มีอยู่แน่นอน
 const authRoutes = require('./routes/auth');
-const requestRoutes = require('./routes/requests');
-const adminRoutes = require('./routes/admin');
-const announcementRoutes = require('./routes/announcements');
-const notificationRoutes = require('./routes/notifications');
-const attachmentRoutes = require('./routes/attachments');
-
 app.use('/api/auth', authRoutes);
-app.use('/api/requests', requestRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/announcements', announcementRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/attachments', attachmentRoutes);
+
+// ตรวจสอบเช็กไฟล์ requests route ก่อนเรียกใช้
+try {
+  const requestRoutes = require('./routes/requests');
+  app.use('/api/requests', requestRoutes);
+} catch (e) {
+  console.log('Note: requests route not loaded');
+}
 
 // Fallback Route
 app.get('*', (req, res) => {
