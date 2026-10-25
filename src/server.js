@@ -28,7 +28,7 @@ app.use(session({
 // 4. ให้บริการไฟล์ Static ใน public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 5. Safe-load Routes ทั้งหมด
+// 5. Safe-load เฉพาะ Routes ที่มีอยู่จริงในโปรเจกต์
 const loadRoute = (routePath, apiEndpoint) => {
   try {
     const route = require(routePath);
@@ -45,7 +45,6 @@ loadRoute('./routes/admin', '/api/admin');
 loadRoute('./routes/announcements', '/api/announcements');
 loadRoute('./routes/notifications', '/api/notifications');
 loadRoute('./routes/attachments', '/api/attachments');
-loadRoute('./routes/options', '/api/options'); // เพิ่ม options ให้ดึงรายการประเภทงานได้
 
 // Fallback Route
 app.get('*', (req, res) => {
