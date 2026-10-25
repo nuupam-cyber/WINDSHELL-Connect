@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WINDSHELL Connect | WINDSHELL Naradhiwass</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='6' y='6' width='88' height='88' rx='22' fill='%234f46e5'/%3E%3Crect x='30' y='30' width='40' height='40' rx='8' fill='none' stroke='white' stroke-width='7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <section id="login">
+    <div class="bg-blobs"><span></span><span></span><span></span></div>
+
+    <form id="loginForm" class="card login-card">
+      <div class="logo"></div>
+      <p class="brand-eyebrow">WINDSHELL NARADHIWAS</p>
+      <h1>WINDSHELL Connect</h1>
+      <p class="muted">บริการลูกบ้านทุกเรื่องในที่เดียว</p>
+      <label>ชื่อผู้ใช้<input name="username" autocomplete="username" required></label>
+      <label>รหัสผ่าน
+        <span class="pw-wrap">
+          <input name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle">แสดง</button>
+        </span>
+      </label>
+      <button type="submit">เข้าสู่ระบบ</button>
+      <p id="loginError" class="error"></p>
+      <p class="center"><a href="#" id="toRegister">ยังไม่มีบัญชี? สมัครลูกบ้าน</a></p>
+    </form>
+
+    <form id="registerForm" class="card login-card hidden">
+      <div class="logo"></div>
+      <p class="brand-eyebrow">WINDSHELL NARADHIWAS</p>
+      <h1>สมัครบัญชีลูกบ้าน</h1>
+      <p class="muted">กรอกเลขที่สัญญาเพื่อยืนยันว่าคุณเป็นผู้เช่าหรือเจ้าของห้อง</p>
+      <label>เลขที่สัญญา<input name="contract_no" placeholder="เช่น CT-A-102" required></label>
+      <label>ชื่อ-สกุล<input name="name" maxlength="100" required></label>
+      <label>ชื่อผู้ใช้ (a-z 0-9 _ .)<input name="username" pattern="[A-Za-z0-9_.]{3,50}" required></label>
+      <label>รหัสผ่าน (อย่างน้อย 8 ตัว)
+        <span class="pw-wrap">
+          <input name="password" type="password" minlength="8" autocomplete="new-password" required>
+          <button type="button" class="pw-toggle">แสดง</button>
+        </span>
+      </label>
+      <label>ยืนยันรหัสผ่าน
+        <span class="pw-wrap">
+          <input name="confirm" type="password" minlength="8" autocomplete="new-password" required>
+          <button type="button" class="pw-toggle">แสดง</button>
+        </span>
+      </label>
+      <button type="submit">สมัครสมาชิก</button>
+      <p id="registerError" class="error"></p>
+      <p class="center"><a href="#" id="toLogin">มีบัญชีแล้ว? เข้าสู่ระบบ</a></p>
+    </form>
+  </section>
+
+  <section id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand">
+        <strong>WINDSHELL Connect</strong>
+        <span class="muted small">WINDSHELL Naradhiwass</span>
+      </div>
+      <div class="userbox">
+                <div class="notif">
+          <button id="bellBtn" class="bell" aria-label="การแจ้งเตือน" title="การแจ้งเตือน">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span id="bellCount" class="bell-count hidden"></span>
+          </button>
+          <div id="notifPanel" class="notif-panel hidden">
+            <div class="notif-head">
+              <b>การแจ้งเตือน</b>
+              <button id="markRead" class="ghost small">อ่านทั้งหมด</button>
+            </div>
+            <div id="notifList"></div>
+          </div>
+        </div>
+        <span id="userName" class="muted"></span>
+        <a id="adminLink" class="btn ghost hidden" href="/admin">หลังบ้าน</a>
+        <button id="logoutBtn" class="ghost">ออกจากระบบ</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="card ann-card">
+        <div class="row between">
+          <h2>ประกาศจากนิติบุคคล</h2>
+          <span id="annCount" class="muted small"></span>
+        </div>
+        <div id="annList" class="ann-list"></div>
+
+        <details class="ann-form hidden" data-perm="announcement.manage">
+          <summary>+ สร้างประกาศใหม่</summary>
+          <form id="annForm">
+            <div class="grid-form">
+              <select name="type">
+                <option value="elevator">🛗 ลิฟต์</option>
+                <option value="maintenance">🔧 บำรุงรักษา</option>
+                <option value="water">💧 ประปา</option>
+                <option value="electric">⚡ ไฟฟ้า</option>
+                <option value="aircon">❄️ เครื่องปรับอากาศ</option>
+                <option value="general">📢 ทั่วไป</option>
+              </select>
+              <input name="title" maxlength="200" placeholder="หัวข้อ เช่น ปิดลิฟต์ตัวที่ 1" required>
+            </div>
+            <div class="grid-form">
+              <label>เริ่ม<input name="starts_at" type="datetime-local" required></label>
+              <label>สิ้นสุด<input name="ends_at" type="datetime-local" required></label>
+            </div>
+            <textarea name="detail" rows="2" maxlength="1000"
+              placeholder="รายละเอียด เช่น ใช้ลิฟต์ตัวที่ 2 แทนระหว่างซ่อม"></textarea>
+            <button>เผยแพร่ประกาศ</button>
+            <p id="annMsg" class="error"></p>
+          </form>
+        </details>
+      </div>
+
+      <div class="card dash-card" data-perm="dashboard.view">
+        <h2>ภาพรวมงาน</h2>
+        <div id="dashStats" class="stat-grid"></div>
+        <div class="dash-cols">
+          <div><h3>สถานะงาน</h3><div id="chartStatus"></div></div>
+          <div><h3>ประเภทงาน</h3><div id="chartCategory"></div></div>
+        </div>
+        <h3 style="margin-top:20px">แจ้งเรื่องใน 7 วันที่ผ่านมา</h3>
+        <div id="chartDaily" class="daily"></div>
+      </div>
+
+      <div class="card form-card" data-perm="request.create">
+        <h2>แจ้งเรื่องใหม่</h2>
+        <form id="createForm">
+          <label>ประเภทงาน
+            <select name="category_id" id="categorySel" required></select>
+          </label>
+          <label>ความเร่งด่วน
+            <select name="priority">
+              <option value="normal">ปกติ</option>
+              <option value="urgent">ด่วน (กระทบการอยู่อาศัย)</option>
+            </select>
+          </label>
+          <label>สถานที่
+            <select name="location_type" id="locationType">
+              <option value="unit">ภายในห้องของฉัน</option>
+              <option value="common">พื้นที่ส่วนกลาง</option>
+            </select>
+          </label>
+          <div id="areaWrap" class="hidden">
+            <label>เลือกพื้นที่ส่วนกลาง
+              <select name="common_area_id" id="areaSel"></select>
+            </label>
+          </div>
+          <p class="muted">ห้องของคุณ: <strong id="unitLabel">—</strong></p>
+          <label><span id="descLabel">รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
+            <textarea id="descInput" name="description" rows="3" maxlength="1000"></textarea>
+          </label>
+          <button type="submit">ส่งคำขอ</button>
+          <p id="createMsg" class="muted"></p>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <h2>รายการแจ้งเรื่อง</h2>
+          <select id="statusFilter" class="narrow"></select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>เลขที่</th><th>ประเภท</th><th>สถานที่</th><th>ผู้แจ้ง</th><th>ผู้รับผิดชอบ</th><th>สถานะ</th><th>วันที่แจ้ง</th></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <footer class="site-footer">
+        WINDSHELL Connect · ระบบบริการลูกบ้าน WINDSHELL Naradhiwass
+      </footer>
+    </main>
+  </section>
+
+  <div id="modal" class="modal hidden">
+    <div class="card modal-box">
+      <button id="closeModal" class="close">×</button>
+      <div id="detail"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

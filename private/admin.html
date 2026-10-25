@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>หลังบ้าน · ระบบแจ้งซ่อม</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong>หลังบ้าน (Admin)</strong>
+    <div class="userbox">
+      <a class="btn ghost" href="/">กลับหน้าหลัก</a>
+      <button id="logoutBtn" class="ghost">ออกจากระบบ</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <nav class="tabs">
+      <button class="tab active" data-tab="users">ผู้ใช้</button>
+      <button class="tab" data-tab="roles">Role</button>
+      <button class="tab" data-tab="acl">สิทธิ์ (ACL)</button>
+      <button class="tab" data-tab="categories">ประเภทงาน</button>
+      <button class="tab" data-tab="property">อาคารและสัญญา</button>
+      <button class="tab" data-tab="logs">Log</button>
+    </nav>
+    <div id="content" class="card"></div>
+  </main>
+
+  <script src="/admin.js"></script>
+</body>
+</html>
