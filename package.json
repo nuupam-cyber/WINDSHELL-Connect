@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "db:setup": "node scripts/setup-db.js"
+    "db:setup": "node scripts/setup-db.js",
+    "demo:reset": "node scripts/reset-demo.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

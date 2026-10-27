@@ -33,6 +33,7 @@ Node.js + Express + PostgreSQL · Session (เก็บใน PostgreSQL) · RBA
 - `src/config/permissions.js` — Permission และ Role ที่โค้ดใช้อยู่ (ลบหรือเปลี่ยนชื่อผ่านเว็บไม่ได้)
 - `src/logger.js` — เขียน Log ลงตาราง `logs` (ไม่บันทึกรหัสผ่าน/Session ID)
 - `public/` หน้าผู้ใช้ทั่วไป · `private/admin.html` หน้า Admin (ต้องล็อกอินและมีสิทธิ์ `user.manage`)
+- `scripts/` — `setup-db.js` สร้างฐานข้อมูล · `seed-staff.js` เพิ่มบัญชีเจ้าหน้าที่ · `reset-demo.js` รีเซ็ตการสาธิต Permission
 
 ## สาธิตการเพิ่ม/ยกเลิก Permission (โจทย์ข้อ 6–7)
 ฟังก์ชัน "ส่งออก CSV" (`GET /api/requests/export`) ตรวจสิทธิ์ `request.export` ซึ่งไม่ได้สร้างไว้ตอนติดตั้ง
@@ -41,3 +42,7 @@ Node.js + Express + PostgreSQL · Session (เก็บใน PostgreSQL) · RBA
 3. เข้าสู่ระบบ head01 → ปุ่ม "ส่งออก CSV" ปรากฏในรายการแจ้งเรื่องและดาวน์โหลดได้
 4. Admin เอาติ๊กออก → head01 กดปุ่มเดิมถูกปฏิเสธ (403) และเรียก `/api/requests/export` ตรงๆ ก็ถูกปฏิเสธ โดยไม่ต้องรีสตาร์ต server
 5. แท็บ Log กรองประเภท `permission_grant`, `permission_revoke`, `access_denied` เพื่อดูหลักฐาน
+
+ต้องการสาธิตซ้ำ (เช่น แคปภาพลงสไลด์ไว้ก่อน แล้วสาธิตสดอีกครั้ง): รัน `npm run demo:reset`
+สคริปต์จะลบ `request.export` ออกจากฐานข้อมูลตามค่า `DATABASE_URL` ใน `.env` และบันทึก Log ว่ารีเซ็ต
+(หน้าเว็บลบสิทธิ์นี้ไม่ได้ เพราะเป็นสิทธิ์ที่โค้ดใช้อยู่)
