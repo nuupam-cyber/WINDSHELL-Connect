@@ -148,13 +148,18 @@ router.get('/export', requirePermission('request.export'), async (req, res) => {
   res.send('﻿' + [head.map(q).join(','), ...lines].join('\r\n'));
 });
 
-// GET /api/requests/technicians — รายชื่อช่างในฝ่ายตัวเอง ใช้ตอนหัวหน้าฝ่ายเลือกผู้รับผิดชอบ
+// GET /api/requests/technicians?department_id= — รายชื่อช่างที่มอบหมายได้ ใช้ตอนเลือกผู้รับผิดชอบ
+// หัวหน้าฝ่าย: ได้เฉพาะช่างในฝ่ายตัวเองเสมอ (ไม่สนค่าที่ส่งมา)
+// Admin (request.read.all) ไม่มีฝ่ายของตัวเอง: ใช้ department_id ของเรื่องที่ส่งมาแทน
 router.get('/technicians', requirePermission('request.assign'), async (req, res) => {
+  const departmentId = req.permissions.has('request.read.all') && req.query.department_id
+    ? parseId(req.query.department_id)
+    : req.user.department_id;
   const { rows } = await db.query(
     `SELECT u.id, u.name FROM users u JOIN roles r ON r.id = u.role_id
      WHERE r.name = 'technician' AND u.is_active AND u.department_id = $1
      ORDER BY u.name`,
-    [req.user.department_id]
+    [departmentId]
   );
   res.json(rows);
 });

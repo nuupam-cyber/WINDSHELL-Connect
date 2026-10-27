@@ -562,7 +562,8 @@ const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Mat
 // acts = ปุ่มที่ผู้ใช้คนนี้กดได้ ขึ้นกับ สถานะ + สิทธิ์ + เป็นเจ้าของ/ช่างของเรื่องหรือไม่ (กฎเดียวกับฝั่ง server)
 async function openDetail(id) {
   const r = await api(`/requests/${id}`);
-  const techs = can('request.assign') && r.status === 'pending' ? await api('/requests/technicians') : [];
+  // ส่งฝ่ายของเรื่องไปด้วย: Admin ไม่มีฝ่ายของตัวเอง server จึงใช้ค่านี้ (หัวหน้าฝ่าย server ใช้ฝ่ายตัวเองเสมอ)
+  const techs = can('request.assign') && r.status === 'pending' ? await api(`/requests/technicians?department_id=${r.department_id}`) : [];
   if (techs.length && !DIR.length) DIR = await api('/directory').catch(() => DIR);
   const mine = (field) => r[field] === me.id;
 
@@ -616,7 +617,7 @@ async function openDetail(id) {
 
     ${acts.length ? `
       <div class="actions">
-        ${techs.length ? pickerHtml(r, techs) : ''}
+        ${techs.length ? pickerHtml(r, techs) : acts.some(([x]) => x === 'assign') ? '<p class="muted small">ฝ่ายนี้ยังไม่มีช่างที่ใช้งานได้ เพิ่มหรือเปิดใช้งานบัญชีช่างในหน้า Admin ก่อน</p>' : ''}
 ${showNote ? `<label class="note-field">หมายเหตุ <span class="muted small">ไม่บังคับเมื่ออนุมัติ · <b>จำเป็นเมื่อไม่อนุมัติ</b></span>
           <textarea id="actNote" rows="2" maxlength="500" placeholder="เช่น เหตุผลที่ไม่อนุมัติ หรือข้อความถึงผู้รับผิดชอบ"></textarea></label>` : ''}
 ${showWorkNote ? `<label class="note-field">รายละเอียดงานที่ทำ <span class="muted small"><b>จำเป็น</b> · ผู้แจ้งจะเห็นในประวัติการดำเนินการ</span>
