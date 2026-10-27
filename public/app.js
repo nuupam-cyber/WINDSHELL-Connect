@@ -214,12 +214,50 @@ async function loadOptions() {
     o.commonAreas.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
 }
 
-// งานฝ่ายช่างอาคาร (needs_photo) บังคับแนบรูป: เปลี่ยนป้ายกำกับและตั้ง required ให้ช่องไฟล์
+// งานฝ่ายช่างอาคาร (needs_photo) บังคับแนบรูป: เปลี่ยนป้ายกำกับ (ตรวจจริงตอนกดส่ง และ server ตรวจซ้ำ)
 function syncPhotoRule() {
   const need = $('#categorySel').selectedOptions[0]?.dataset.photo === 'true';
-  $('#createFiles').required = need;
   $('#fileLabel').textContent = need ? 'แนบรูปหรือไฟล์ (จำเป็น) *' : 'แนบรูปหรือไฟล์ (ไม่บังคับ)';
 }
+
+// ===== ไฟล์แนบในฟอร์มแจ้งเรื่อง: เลือกเพิ่มทีละครั้ง ลบไฟล์ที่เลือกผิดออกแล้วเลือกใหม่ได้ก่อนกดส่ง =====
+const MAX_FILES = 3;
+const MAX_SIZE = 5 * 1024 * 1024;
+let picked = []; // ไฟล์ที่เลือกไว้ (ยังไม่ได้ส่ง)
+
+function renderPicked() {
+  $('#pickedFiles').innerHTML = picked.map((f, i) => `
+    <li>
+      ${f.type.startsWith('image/') ? `<img src="${URL.createObjectURL(f)}" alt="">` : '<span class="pdf">PDF</span>'}
+      <span class="picked-name">${esc(f.name)}<small class="muted">${fmtSize(f.size)}</small></span>
+      <button type="button" class="ghost small cancel" data-unpick="${i}">ลบ</button>
+    </li>`).join('');
+  const left = MAX_FILES - picked.length;
+  $('#pickBtn').disabled = left === 0;
+  $('#pickBtn').textContent = left === 0 ? 'แนบครบ 3 ไฟล์แล้ว' : picked.length ? `+ เลือกไฟล์เพิ่ม (อีก ${left})` : '+ เลือกไฟล์';
+}
+
+$('#pickBtn').onclick = () => $('#createFiles').click();
+
+// ตรวจขนาดและจำนวนทันทีที่เลือก (server ตรวจซ้ำอีกครั้งตอนส่ง รวมถึงชนิดไฟล์จากเนื้อไฟล์)
+$('#createFiles').onchange = (e) => {
+  const msg = $('#createMsg');
+  msg.textContent = '';
+  for (const f of e.target.files) {
+    if (f.size > MAX_SIZE) { showMsg(msg, `${f.name} ใหญ่เกิน 5 MB`); continue; }
+    if (picked.length >= MAX_FILES) { showMsg(msg, 'แนบได้สูงสุด 3 ไฟล์'); break; }
+    if (!picked.some((p) => p.name === f.name && p.size === f.size)) picked.push(f);
+  }
+  e.target.value = ''; // ล้างช่อง ให้เลือกไฟล์ชื่อเดิมซ้ำได้หลังลบ
+  renderPicked();
+};
+
+$('#pickedFiles').onclick = (e) => {
+  const b = e.target.closest('[data-unpick]');
+  if (!b) return;
+  picked.splice(Number(b.dataset.unpick), 1);
+  renderPicked();
+};
 
 $('#categorySel').onchange = () => {
   syncPhotoRule();
@@ -277,9 +315,7 @@ $('#createForm').onsubmit = async (e) => {
     return showMsg(msg, 'กรุณาเลือกพื้นที่ส่วนกลาง');
   }
 
-  const files = [...$('#createFiles').files];
-  if (files.length > 3) return showMsg(msg, 'แนบได้สูงสุด 3 ไฟล์');
-  if (files.some((x) => x.size > 5 * 1024 * 1024)) return showMsg(msg, 'มีไฟล์ใหญ่เกิน 5 MB');
+  const files = picked;
   if ($('#categorySel').selectedOptions[0]?.dataset.photo === 'true' && !files.length) {
     return showMsg(msg, 'งานประเภทนี้ต้องแนบรูปอย่างน้อย 1 ไฟล์ เพื่อให้ช่างเห็นปัญหา');
   }
@@ -296,6 +332,8 @@ $('#createForm').onsubmit = async (e) => {
   try {
     await api('/requests', { method: 'POST', body });
     e.target.reset();
+    picked = [];
+    renderPicked();
     syncPhotoRule();
     syncCreateForm();
     $('#areaWrap').classList.add('hidden');

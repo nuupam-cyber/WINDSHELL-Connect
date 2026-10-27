@@ -215,10 +215,13 @@
           <label class="fstep"><span id="descLabel">รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
             <textarea id="descInput" name="description" rows="3" maxlength="1000"></textarea>
           </label>
-          <label class="file-up fstep"><span id="fileLabel">แนบรูปหรือไฟล์ (ไม่บังคับ)</span>
+          <!-- แนบไฟล์: ช่องเลือกไฟล์ถูกซ่อน ใช้ปุ่ม "เลือกไฟล์" แทน ไฟล์ที่เลือกแสดงเป็นรายการ ลบทีละไฟล์แล้วเลือกใหม่ได้ (app.js) -->
+          <div class="file-up fstep"><span id="fileLabel">แนบรูปหรือไฟล์ (ไม่บังคับ)</span>
             <span class="muted small">JPG, PNG หรือ PDF ไม่เกิน 5 MB ต่อไฟล์ สูงสุด 3 ไฟล์</span>
-            <input type="file" id="createFiles" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple>
-          </label>
+            <input type="file" id="createFiles" class="hidden" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple>
+            <ul id="pickedFiles" class="picked"></ul>
+            <button type="button" id="pickBtn" class="ghost small">+ เลือกไฟล์</button>
+          </div>
           <button type="submit" class="send">ส่งคำขอ</button>
           <p id="createMsg" class="muted"></p>
         </form>
