@@ -1,5 +1,14 @@
+// =====================================================================
+// public/admin.js — JavaScript ของหน้าจัดการระบบ (/admin) สำหรับ Admin
+// หน้านี้เปิดได้เฉพาะผู้มีสิทธิ์ user.manage (server ตรวจก่อนส่งไฟล์ admin.html)
+// และทุกปุ่มเรียก API /api/admin/... ซึ่งตรวจสิทธิ์ซ้ำทุกครั้ง
+//
+// แท็บ: ภาพรวม | ผู้ใช้ | Role | สิทธิ์ (ACL) | ประเภทงาน | ห้องและพื้นที่ | Log
+// แต่ละแท็บมีฟังก์ชัน renderXxx() ที่ดึงข้อมูลจาก API แล้ววาดลงใน #content
+// =====================================================================
 const $ = (s) => document.querySelector(s);
 
+// api(): ตัวกลางเรียก API ส่ง cookie session ไปด้วย ถ้าไม่สำเร็จโยน Error พร้อมข้อความจาก server
 async function api(path, opts = {}) {
   const init = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
   if (opts.body instanceof FormData) init.body = opts.body;
@@ -73,11 +82,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
 const fmtDate = (d) => new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
 const formData = (f) => Object.fromEntries(new FormData(f));
 const nullable = (v) => (v === '' || v == null ? null : Number(v));
+// run(fn, after): รันคำสั่ง ถ้าผิดพลาดแสดงข้อความ แล้ววาดแท็บใหม่ (after) ให้เห็นข้อมูลล่าสุด
 const run = async (fn, after) => {
   try { await fn(); } catch (e) { toast(e.message, 'error'); }
   if (after) after();
 };
 
+// views: จับคู่ชื่อแท็บกับฟังก์ชันวาดหน้า
 const views = { overview: renderOverview, users: renderUsers, roles: renderRoles, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
 
 const PAGE = {
@@ -89,6 +100,7 @@ const PAGE = {
   property: ['ห้องและพื้นที่', 'ห้องพัก สัญญา และพื้นที่ส่วนกลาง'],
   logs: ['Log การใช้งาน', 'ประวัติการใช้งานและความพยายามเข้าถึงระบบ'],
 };
+// openTab: สลับแท็บ เปลี่ยนหัวข้อ แล้วเรียก renderXxx ของแท็บนั้น
 function openTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   $('#pageTitle').textContent = PAGE[name][0];
@@ -140,6 +152,7 @@ api('/auth/me').then((m) => { $('#meName').textContent = m.name; $('#meBtn').tit
 api('/notifications').then((n) => { if (n && n.unread > 0) $('#bellDot').classList.remove('hidden'); }).catch(() => {});
 
 // ===== ภาพรวม =====
+// ส่งออกรายการคำร้องเป็นไฟล์ CSV (เปิดด้วย Excel ได้)
 function exportCsv(rows, dir = []) {
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const pad = (n) => String(n).padStart(2, '0');
@@ -166,6 +179,7 @@ const IC = {
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   alert: '<svg viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>',
 };
+// แท็บภาพรวม: ตัวเลขสรุปคำร้อง ผู้ใช้ และ Role
 async function renderOverview() {
   const [st, users, roles] = await Promise.all([api('/requests/stats'), api('/admin/users'), api('/admin/roles')]);
   const n = (s) => st.byStatus.find((x) => x.status === s)?.n ?? 0;
@@ -224,6 +238,8 @@ function userGroups(users, roles) {
 }
 
 // ===== ผู้ใช้ =====
+// แท็บผู้ใช้: เพิ่มบัญชี, เปลี่ยน Role/ฝ่าย, เปิด-ปิดบัญชี, ตั้งรหัสผ่านใหม่ (PATCH /api/admin/users/:id ฯลฯ)
+// การเปลี่ยน Role ทำผ่านเว็บได้ทันที ไม่ต้องแก้โค้ด และ server กันไม่ให้ Admin คนสุดท้ายหายไป
 async function renderUsers() {
   const [users, roles, depts] = await Promise.all([
     api('/admin/users'), api('/admin/roles'), api('/admin/departments'),
@@ -355,6 +371,7 @@ async function renderUsers() {
 }
 
 // ===== Role =====
+// แท็บ Role: เพิ่ม/แก้/ลบ Role (server ปฏิเสธการลบ Role ที่ยังมีผู้ใช้ และ Role admin)
 async function renderRoles() {
   const roles = await api('/admin/roles');
   $('#content').innerHTML = `
@@ -391,6 +408,7 @@ async function renderRoles() {
 }
 
 // ===== ACL: Role × Permission =====
+// PERM: คำอธิบายภาษาไทยของแต่ละ Permission ใช้แสดงในตาราง ACL แบ่งเป็นกลุ่ม (ไม่มีผลต่อการตรวจสิทธิ์)
 const PERM = {
   'request.create': ['งานแจ้งซ่อม', 'แจ้งเรื่องซ่อมใหม่', 'ลูกบ้านกรอกฟอร์มแจ้งเรื่อง'],
   'request.approve': ['งานแจ้งซ่อม', 'อนุมัติหรือไม่อนุมัติเรื่อง', 'เฉพาะเรื่องในแผนกของตัวเอง'],
@@ -416,6 +434,9 @@ const PERM_GROUPS = ['งานแจ้งซ่อม', 'ประกาศ', 
 const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าแผนก', technician: 'เจ้าหน้าที่ช่าง', resident: 'ลูกบ้าน' };
 const LOCKOUT = ['acl.manage', 'user.manage', 'permission.manage'];
 
+// แท็บ ACL: ตาราง Role (คอลัมน์) × Permission (แถว) แต่ละช่องคือ checkbox
+// ติ๊ก = POST /api/admin/acl (ให้สิทธิ์), เอาติ๊กออก = DELETE /api/admin/acl/:roleId/:permId (ถอนสิทธิ์)
+// มีผลกับผู้ใช้ทันทีโดยไม่ต้องรีสตาร์ต server
 async function renderAcl() {
   const { roles, permissions, grants } = await api('/admin/acl');
   const granted = new Set(grants.map((g) => `${g.role_id}-${g.permission_id}`));
@@ -459,11 +480,13 @@ async function renderAcl() {
       <p class="muted">สิทธิ์ใหม่จะป้องกันอะไรจริงก็ต่อเมื่อ Route ในโค้ดเรียกใช้ requirePermission ด้วยชื่อนั้น</p>
     </details>`;
 
+  // เพิ่ม Permission ใหม่ผ่านเว็บ (POST /api/admin/permissions)
   $('#permForm').onsubmit = (e) => {
     e.preventDefault();
     run(() => api('/admin/permissions', { method: 'POST', body: formData(e.target) }), renderAcl);
   };
 
+  // เมื่อติ๊ก/เอาติ๊กออก: ถ้าเป็นสิทธิ์สำคัญของ admin ถามยืนยันก่อน ถ้า server ปฏิเสธ คืนค่า checkbox กลับเหมือนเดิม
   $('#content').onchange = async (e) => {
     const cb = e.target;
     if (cb.type !== 'checkbox') return;
@@ -490,6 +513,7 @@ async function renderAcl() {
 }
 
 // ===== ประเภทงาน =====
+// แท็บประเภทงาน: เพิ่มประเภท, เลือกฝ่ายที่รับผิดชอบ, บังคับกรอกรายละเอียด, เปิด/ปิดใช้งาน
 async function renderCategories() {
   const [cats, depts] = await Promise.all([api('/admin/categories'), api('/admin/departments')]);
   const deptOpts = (sel) => depts.map((d) =>
@@ -545,6 +569,8 @@ async function renderCategories() {
 }
 
 // ===== Log =====
+// แท็บ Log: กรองตามช่วงวันที่ ผู้ใช้ ผลลัพธ์ (success/failure/denied) และประเภทเหตุการณ์
+// ส่งเงื่อนไขเป็น query string ไปที่ GET /api/admin/logs ให้ server ค้นในฐานข้อมูล
 async function renderLogs() {
   const logUsers = await api('/admin/users').catch(() => []);
   $('#content').innerHTML = `
@@ -594,6 +620,7 @@ async function renderLogs() {
 }
 
 // ===== อาคารและสัญญา =====
+// แท็บห้องและพื้นที่: เพิ่มห้อง, เพิ่มสัญญา, เปิด/ปิดสัญญา, ถอนผู้สมัครออกจากสัญญา, เปิด/ปิดพื้นที่ส่วนกลาง
 async function renderProperty() {
   const [buildings, units, contracts, areas] = await Promise.all([
     api('/admin/property/buildings'),
@@ -707,4 +734,5 @@ async function renderProperty() {
   };
 }
 
+// เปิดหน้ามาแสดงแท็บภาพรวมก่อน
 openTab('overview');

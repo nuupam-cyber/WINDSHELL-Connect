@@ -1,5 +1,8 @@
 <!doctype html>
 <html lang="th">
+<!-- private/admin.html — หน้าจัดการระบบ อยู่ในโฟลเดอร์ private/ จึงเปิดเป็นไฟล์ static ไม่ได้
+     server ส่งหน้านี้ผ่าน GET /admin เฉพาะผู้ที่ล็อกอินแล้วและมีสิทธิ์ user.manage
+     เนื้อหาแต่ละแท็บถูกวาดลงใน #content โดย admin.js -->
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,6 +20,7 @@
         <span class="logo sm"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 10c4-4 8 4 12 0s6-3 12 0M4 17c4-4 8 4 12 0s6-3 12 0M4 24c4-4 8 4 12 0s6-3 12 0"/></svg></span>
         <div class="lbl"><strong>จัดการระบบ</strong><small>WINDSHELL Connect</small></div>
       </div>
+      <!-- เมนูแท็บ: data-tab ตรงกับชื่อใน views ของ admin.js -->
       <nav class="side-nav" aria-label="เมนูจัดการระบบ">
       <button class="tab active" data-tab="overview" title="ภาพรวม"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="lbl">ภาพรวม</span></button>
       <button class="tab" data-tab="users" title="ผู้ใช้"><svg class="i" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">ผู้ใช้</span></button>
@@ -46,6 +50,7 @@
           </button>
         </div>
       </header>
+      <!-- พื้นที่แสดงเนื้อหาของแท็บที่เลือก -->
       <main class="admin-main"><div class="card" id="content"><p class="muted">กำลังโหลด…</p></div></main>
     </div>
   </div>

@@ -1,3 +1,5 @@
+// หมายเหตุ: ไฟล์นี้ยังไม่ได้ถูกผูกใน server.js (ไม่มี loadRoute) จึงยังไม่เปิดใช้งาน
+// ระบบปัจจุบันให้ลูกบ้านแจ้งนิติบุคคล แล้ว Admin ตั้งรหัสผ่านใหม่ให้ผ่าน routes/admin-extra.js
 // ลืมรหัสผ่าน: ส่งรหัส OTP 6 หลักทางอีเมล แล้วตั้งรหัสผ่านใหม่
 // ต้องตั้งค่าบน Render: BREVO_API_KEY และ MAIL_FROM (อีเมลผู้ส่งที่ยืนยันกับ Brevo แล้ว)
 const express = require('express');
@@ -12,6 +14,7 @@ const CODE_TTL_MIN = 10;
 const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_15_MIN = 3;
 
+// เก็บเฉพาะ Hash ของรหัส OTP ในฐานข้อมูล ไม่เก็บตัวเลขจริง
 const hashCode = (code, userId) =>
   crypto.createHash('sha256').update(`${code}:${userId}:${SECRET()}`).digest('hex');
 
@@ -105,6 +108,7 @@ router.post('/confirm', async (req, res) => {
      RETURNING id, code_hash`, [u.id, MAX_ATTEMPTS]);
   if (!r) throw fail();
 
+  // timingSafeEqual: เทียบค่าโดยใช้เวลาเท่ากันเสมอ กันการเดารหัสจากเวลาตอบสนอง
   const a = Buffer.from(r.code_hash, 'hex');
   const b = Buffer.from(hashCode(String(code), u.id), 'hex');
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw fail();

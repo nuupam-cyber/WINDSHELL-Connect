@@ -1,3 +1,8 @@
+// =====================================================================
+// src/routes/announcements.js — ประกาศจากนิติบุคคล (path: /api/announcements)
+// อ่าน: announcement.read (ทุก Role) | สร้าง/ยกเลิก: announcement.manage
+// การตรวจว่า "ยกเลิกได้เฉพาะผู้สร้าง" อยู่ใน server.js ซึ่งทำงานก่อน Route ยกเลิกในไฟล์นี้
+// =====================================================================
 const { Router } = require('express');
 const db = require('../db');
 const { audit } = require('../logger');
@@ -6,6 +11,7 @@ const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
 
 const router = Router();
+// ประเภทประกาศที่อนุญาต ค่าที่ส่งมาต้องอยู่ในรายการนี้เท่านั้น
 const TYPES = ['elevator', 'maintenance', 'water', 'electric', 'aircon', 'general'];
 
 // ประกาศที่ยังใช้งานอยู่และยังไม่หมดเวลา เรียงตามเวลาเริ่ม
@@ -19,6 +25,7 @@ router.get('/', requirePermission('announcement.read'), async (req, res) => {
   res.json(rows);
 });
 
+// POST /api/announcements — สร้างประกาศ ตรวจ: ประเภท, หัวข้อ, วันเวลาถูกต้อง, เวลาสิ้นสุดอยู่หลังเวลาเริ่ม
 router.post('/', requirePermission('announcement.manage'), async (req, res) => {
   const b = req.body;
   if (!TYPES.includes(b.type)) throw new HttpError(400, 'ประเภทประกาศไม่ถูกต้อง');
@@ -46,6 +53,7 @@ router.post('/', requirePermission('announcement.manage'), async (req, res) => {
   res.status(201).json(a);
 });
 
+// POST /api/announcements/:id/cancel — ไม่ลบจริง แค่ตั้ง is_active = FALSE (Soft delete) ประวัติยังอยู่
 router.post('/:id/cancel', requirePermission('announcement.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rowCount } = await db.query(

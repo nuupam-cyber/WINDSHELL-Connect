@@ -1,3 +1,8 @@
+// =====================================================================
+// src/routes/attachments.js — เปิดดู / ดาวน์โหลด / ลบไฟล์แนบ (path: /api/attachments/:id)
+// ไฟล์ไม่ได้เปิดเป็น URL สาธารณะ ทุกครั้งที่เปิดต้องผ่านการตรวจสิทธิ์ในไฟล์นี้
+// (การอัปโหลดอยู่ใน routes/requests.js)
+// =====================================================================
 const fs = require('fs');
 const path = require('path');
 const { Router } = require('express');
@@ -11,6 +16,7 @@ const { parseId, canView, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require(
 const router = Router();
 
 // withData: ดึงเนื้อไฟล์มาด้วย (ใช้ตอนเปิดดูเท่านั้น)
+// loadAttachment: ดึงข้อมูลไฟล์พร้อมข้อมูลเจ้าของคำร้อง (ผู้แจ้ง, ฝ่าย, ช่าง) เพื่อใช้ตรวจสิทธิ์ด้วย canView
 async function loadAttachment(id, withData = false) {
   const { rows: [a] } = await db.query(
     `SELECT a.id, a.request_id, a.original_name, a.stored_name, a.mime_type, a.uploaded_by,
@@ -24,6 +30,9 @@ async function loadAttachment(id, withData = false) {
 }
 
 // เปิดดูหรือดาวน์โหลด ผ่าน Route ที่ตรวจสิทธิ์ ไม่เปิด static folder
+// GET /api/attachments/:id — ด่านตรวจ: สิทธิ์ attachment.read → ต้องดูคำร้องที่ไฟล์นี้ผูกอยู่ได้ → ส่งไฟล์
+// ?download=1 → ให้เบราว์เซอร์ดาวน์โหลด, ไม่ใส่ → เปิดดูในแท็บ
+// nosniff: บังคับให้เบราว์เซอร์เชื่อ Content-Type ที่ server กำหนด ไม่เดาชนิดไฟล์เอง
 router.get('/:id', requirePermission('attachment.read'), async (req, res) => {
   const id = parseId(req.params.id);
   const a = await loadAttachment(id, true);
@@ -49,6 +58,8 @@ router.get('/:id', requirePermission('attachment.read'), async (req, res) => {
 });
 
 // ลบไฟล์: ต้องมี attachment.delete หรือ attachment.upload แล้วตรวจเงื่อนไขละเอียดใน canDeleteAttachment
+// DELETE /api/attachments/:id — กติกาละเอียดอยู่ใน canDeleteAttachment (services/access.js)
+// ลบแล้วบันทึก Log attachment_delete ถ้าไม่ผ่านบันทึก Log access_denied พร้อมเหตุผล
 router.delete('/:id', async (req, res) => {
   const id = parseId(req.params.id);
   if (!req.permissions.has('attachment.delete') && !req.permissions.has('attachment.upload')) {

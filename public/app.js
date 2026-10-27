@@ -1,8 +1,24 @@
+// =====================================================================
+// public/app.js — JavaScript ฝั่งเบราว์เซอร์ของหน้าหลัก (index.html) ใช้ได้ทุก Role
+// ทำงานแบบหน้าเดียว (Single Page): ดึงข้อมูลจาก API ด้วย fetch แล้ววาด HTML ใหม่โดยไม่โหลดหน้า
+//
+// ส่วนประกอบหลัก (ไล่ตามลำดับในไฟล์):
+//   1) ตัวช่วย: api(), can(), esc(), dialog(), toast()
+//   2) renderShell(): สลับหน้าเข้าสู่ระบบ / หน้าหลัก และซ่อน-แสดงส่วนต่างๆ ตามสิทธิ์
+//   3) เข้าสู่ระบบ / สมัคร / ออกจากระบบ
+//   4) ฟอร์มแจ้งเรื่องใหม่ (แนบไฟล์ได้)
+//   5) รายการคำร้อง, งานที่ค้างอยู่, ตัวเลขสรุป
+//   6) หน้ารายละเอียด + ปุ่มเปลี่ยนสถานะ + ไฟล์แนบ
+//   7) แดชบอร์ด, ประกาศ, กระดิ่งแจ้งเตือน
+//
+// สำคัญ: การซ่อนปุ่มในไฟล์นี้เพื่อความสะดวกของผู้ใช้เท่านั้น ความปลอดภัยจริงอยู่ที่ server ตรวจซ้ำทุกคำขอ
+// =====================================================================
 const $ = (s) => document.querySelector(s);
 const STATUS = {
   pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ',
   done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก',
 };
+// me = ข้อมูลผู้ใช้ที่ล็อกอินอยู่ (จาก /api/auth/me) รวมรายการ permissions
 let me = null;
 let DIR = []; // รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง
 const refOf = (r) => r.ref || `#${r.id}`;
@@ -17,6 +33,11 @@ const ROLE = {
   resident: ['ลูกบ้าน', 'เรื่องแจ้งซ่อมของคุณ'],
 };
 
+// api(): ตัวกลางเรียก API ทุกตัว
+// - ส่ง cookie session ไปด้วย (credentials: same-origin)
+// - ถ้าเป็น FormData (มีไฟล์) ส่งตรงๆ ไม่งั้นแปลงเป็น JSON
+// - ถ้า server ตอบ 401 (session หมดอายุ) พากลับหน้าเข้าสู่ระบบ
+// - ถ้าไม่สำเร็จ โยน Error พร้อมข้อความภาษาไทยจาก server เพื่อแสดงให้ผู้ใช้เห็น
 async function api(path, opts = {}) {
   const init = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
   if (opts.body instanceof FormData) init.body = opts.body;
@@ -32,6 +53,8 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(data.error || data.message || 'เกิดข้อผิดพลาด');
   return data;
 }
+// can('request.create') → true/false ใช้ตัดสินว่าจะแสดงปุ่ม/ส่วนไหน
+// esc(): แปลงอักขระพิเศษ HTML ก่อนแสดงข้อมูลจากผู้ใช้ ป้องกัน XSS (สคริปต์แปลกปลอมฝังมากับข้อความ)
 const can = (p) => !!me && me.permissions.includes(p);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -86,6 +109,7 @@ function dialog({ title, intro = '', fields = [], submit = 'บันทึก',
 const confirmBox = ({ title, message, ok = 'ยืนยัน', danger = false }) =>
   dialog({ title, intro: message, submit: ok, danger }).then((r) => r !== null);
 
+// toast: ข้อความแจ้งเล็กๆ มุมจอ หายเองใน 4.5 วินาที
 function toast(msg, kind = 'info') {
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
@@ -97,6 +121,9 @@ const alertErr = (e) => toast(e.message, 'error');
 
 $('#meBtn').onclick = () => openAccount((name) => { if (me) { me.name = name; $('#userName').textContent = name; } });
 
+// renderShell: เรียกหลังรู้ว่าล็อกอินหรือยัง
+// ทุก element ที่มี data-perm="ชื่อสิทธิ์" ใน index.html จะถูกซ่อนถ้าผู้ใช้ไม่มีสิทธิ์นั้น
+// แล้วโหลดข้อมูลที่ผู้ใช้คนนี้มีสิทธิ์เห็น
 function renderShell() {
   $('#login').classList.toggle('hidden', !!me);
   $('#app').classList.toggle('hidden', !me);
@@ -128,6 +155,7 @@ $('#toRegister').onclick = (e) => { e.preventDefault(); showLoginForm('register'
 $('#toLogin').onclick = (e) => { e.preventDefault(); showLoginForm('login'); };
 
 
+// ส่งชื่อผู้ใช้/รหัสผ่านไป /api/auth/login → สำเร็จแล้วดึง /api/auth/me มาเก็บใน me → วาดหน้าหลัก
 $('#loginForm').onsubmit = async (e) => {
   e.preventDefault();
   $('#loginError').className = 'error';
@@ -142,6 +170,7 @@ $('#loginForm').onsubmit = async (e) => {
   }
 };
 
+// สมัครลูกบ้าน: ตรวจรหัสผ่าน 2 ช่องตรงกันก่อน (ฝั่งเบราว์เซอร์) แล้ว server ตรวจซ้ำทุกช่อง
 $('#registerForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
@@ -167,12 +196,14 @@ $('#registerForm').onsubmit = async (e) => {
   }
 };
 
+// ออกจากระบบ: server ทำลาย session แล้วโหลดหน้าใหม่ กลับไปหน้าเข้าสู่ระบบ
 $('#logoutBtn').onclick = async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.reload();
 };
 
 // ===== ตัวเลือกฟอร์มแจ้งซ่อม =====
+// ดึงประเภทงาน พื้นที่ส่วนกลาง และห้องของผู้ใช้ มาเติมใน dropdown ของฟอร์ม
 async function loadOptions() {
   const o = await api('/requests/options');
   $('#unitLabel').textContent = o.unit ? o.unit.unit_no : 'ยังไม่ได้ผูกห้อง';
@@ -184,6 +215,7 @@ async function loadOptions() {
     o.commonAreas.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
 }
 
+// งานฝ่ายช่างอาคาร (needs_photo) บังคับแนบรูป: เปลี่ยนป้ายกำกับและตั้ง required ให้ช่องไฟล์
 function syncPhotoRule() {
   const need = $('#categorySel').selectedOptions[0]?.dataset.photo === 'true';
   $('#createFiles').required = need;
@@ -234,6 +266,7 @@ $('#createForm').addEventListener('change', (e) => {
     $('#areaWrap').classList.toggle('hidden', e.target.value !== 'common');
 });
 
+// ส่งฟอร์มแจ้งเรื่อง: ตรวจเบื้องต้นในเบราว์เซอร์ (ช่วยผู้ใช้) แล้ว server ตรวจซ้ำทั้งหมดอีกครั้ง
 $('#createForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
@@ -288,6 +321,7 @@ let allRows = [];
 $('#statusFilter').onchange = () => renderRows();
 $('#searchBox').oninput = () => renderRows();
 
+// โหลดรายการคำร้อง (server กรองตามสิทธิ์มาให้แล้ว) และรายชื่อเจ้าหน้าที่ แล้ววาดทุกส่วนที่ใช้ข้อมูลนี้
 async function loadRequests() {
   [allRows, DIR] = await Promise.all([api('/requests'), api('/directory').catch(() => [])]);
   renderSummary();
@@ -303,6 +337,7 @@ const isMine = (r, idF, nameF) =>
   (r[idF] !== undefined && r[idF] !== null ? Number(r[idF]) === Number(me.id) : r[nameF] === me.name);
 
 // คืนข้อความปุ่มถ้าเรื่องนี้รอให้ "คุณ" ทำ ไม่งั้นคืนค่าว่าง (ใช้กฎเดียวกับปุ่มในหน้ารายละเอียด)
+// ปุ่มลัดในการ์ด "งานที่ยังค้างอยู่" แต่ละ Role เห็นงานที่ตัวเองต้องทำต่อ
 function todoAction(r) {
   if (r.status === 'pending' && (can('request.assign') || can('request.approve'))) return 'พิจารณาเรื่อง';
   if (r.status === 'assigned' && can('request.update_status') && isMine(r, 'technician_id', 'technician_name')) return 'เริ่มดำเนินการ';
@@ -357,6 +392,7 @@ $('#todoList').onkeydown = (e) => {
   if (it && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(it.dataset.open).catch(alertErr); }
 };
 
+// ตัวเลขสรุป 4 ช่องด้านบน นับจากรายการที่ผู้ใช้มองเห็น
 function renderSummary() {
   const n = (...st) => allRows.filter((r) => st.includes(r.status)).length;
   const cell = (v, l, c = '') => `<div class="sum ${c}"><b>${v}</b><span>${l}</span></div>`;
@@ -367,6 +403,7 @@ function renderSummary() {
     cell(n('closed'), 'ปิดเรื่องแล้ว', 'ok');
 }
 
+// วาดตารางรายการ พร้อมกรองตามสถานะและคำค้นหา (กรองในเบราว์เซอร์ ไม่ต้องเรียก API ใหม่)
 function renderRows() {
   const s = $('#statusFilter').value;
   const q = $('#searchBox').value.trim().toLowerCase();
@@ -386,6 +423,7 @@ function renderRows() {
     : `<tr><td colspan="7" class="empty">${allRows.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายการแจ้งเรื่อง'}</td></tr>`;
 }
 
+// แถบความคืบหน้า 5 ขั้นในหน้ารายละเอียด (ไม่อนุมัติ/ยกเลิก แสดงเป็นข้อความแทน)
 const FLOW = ['pending', 'assigned', 'in_progress', 'done', 'closed'];
 function progress(st) {
   const i = FLOW.indexOf(st);
@@ -401,6 +439,7 @@ $('#rows').onclick = (e) => {
 
 // ประเภทงาน -> ตำแหน่งที่รับผิดชอบ (จับคู่ด้วยคำสำคัญในชื่อประเภท / ตำแหน่ง)
 const ROLE_FOR = [['ไฟฟ้า', 'ไฟฟ้า'], ['ประปา', 'ประปา'], ['ปรับอากาศ', 'แอร์'], ['แอร์', 'แอร์'], ['ประตู', 'ประตู'], ['กุญแจ', 'ประตู'], ['ดิจิทัล', 'ดิจิทัล'], ['สัญญาณ', 'ดิจิทัล'], ['ความสะอาด', 'ความสะอาด'], ['รักษาความปลอดภัย', 'รักษาความปลอดภัย']];
+// pickerHtml: รายชื่อช่างให้หัวหน้าฝ่ายเลือก ช่างที่ตำแหน่งตรงกับประเภทงานขึ้นก่อน
 function pickerHtml(r, techs) {
   const kw = (ROLE_FOR.find(([c]) => (r.category || '').includes(c)) || [])[1];
   const match = kw ? techs.filter((t) => posById(t.id).includes(kw)) : [];
@@ -418,6 +457,8 @@ function pickerHtml(r, techs) {
 // ===== รายละเอียดและการดำเนินการ =====
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
+// openDetail: เปิดหน้ารายละเอียดเรื่อง (ดึงจาก /api/requests/:id)
+// acts = ปุ่มที่ผู้ใช้คนนี้กดได้ ขึ้นกับ สถานะ + สิทธิ์ + เป็นเจ้าของ/ช่างของเรื่องหรือไม่ (กฎเดียวกับฝั่ง server)
 async function openDetail(id) {
   const r = await api(`/requests/${id}`);
   const techs = can('request.assign') && r.status === 'pending' ? await api('/requests/technicians') : [];
@@ -433,6 +474,7 @@ async function openDetail(id) {
   if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'cancel']);
   if (r.status === 'pending' && !r.technician_id && can('request.cancel.own') && mine('requester_id')) acts.push(['delete', 'ลบเรื่องนี้', 'danger']);
 
+  // showNote = ช่องหมายเหตุตอนพิจารณา, showWorkNote = ช่องรายละเอียดงานที่ทำตอนช่างกดเสร็จ
   const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
   const showWorkNote = acts.some(([x]) => x === 'complete');
   $('#detail').innerHTML = `
@@ -474,6 +516,7 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
       </div>` : ''}
     <p id="detailMsg" class="error"></p>`;
 
+  // เลือกไฟล์แล้วอัปโหลดทันที (POST /api/requests/:id/attachments) แล้วเปิดหน้ารายละเอียดใหม่ให้เห็นไฟล์
   const fileIn = $('#fileIn');
   if (fileIn) fileIn.onchange = async () => {
     const f = fileIn.files[0];
@@ -491,6 +534,7 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
     }
   };
 
+  // ตัวจัดการคลิกทั้งหน้ารายละเอียด: ปุ่มลบไฟล์, ลบเรื่อง, และปุ่มเปลี่ยนสถานะ (data-act)
   $('#detail').onclick = async (e) => {
     const del = e.target.closest('[data-delfile]');
     if (del) {
@@ -531,6 +575,7 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
       if (!t) { $('#detailMsg').textContent = 'กรุณาเลือกผู้รับผิดชอบก่อน'; return; }
       body.technician_id = Number(t.value);
     }
+    // ส่งไป POST /api/requests/:id/<การกระทำ> เช่น /assign พร้อมหมายเหตุ และ technician_id ถ้าเป็นการมอบหมาย
     try {
       await api(`/requests/${id}/${b.dataset.act}`, { method: 'POST', body });
       await openDetail(id);
@@ -548,6 +593,7 @@ $('#closeModal').onclick = () => $('#modal').classList.add('hidden');
 
 // หน้าเข้าสู่ระบบ: ปล่อยให้เบราว์เซอร์เสนอชื่อผู้ใช้/รหัสผ่านที่จำไว้ได้ตามปกติ (autocomplete=username / current-password)
 
+// เริ่มต้นเมื่อเปิดหน้า: ถาม server ว่ายังล็อกอินอยู่ไหม (มี session) แล้ววาดหน้าตามผล
 async function init() {
   try { me = await api('/auth/me'); } catch { me = null; }
   renderShell();
@@ -565,6 +611,7 @@ function setPwIcon(btn, showing) {
 
 document.querySelectorAll('.pw-toggle').forEach((b) => setPwIcon(b, false));
 
+// ปุ่มรูปตา แสดง/ซ่อนรหัสผ่านในช่องกรอก
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.pw-toggle');
   if (!btn) return;
@@ -574,6 +621,7 @@ document.addEventListener('click', (e) => {
   setPwIcon(btn, !showing);
 });
 // ===== แดชบอร์ด =====
+// แดชบอร์ด (สิทธิ์ dashboard.view): วาดกราฟแท่งด้วย HTML/CSS จากตัวเลขของ /api/requests/stats
 async function loadDashboard() {
   const d = await api('/requests/stats');
   const count = (s) => d.byStatus.find((x) => x.status === s)?.n ?? 0;
@@ -631,6 +679,7 @@ const dayDiff = (d) => {
   return Math.round((b - a) / 864e5);
 };
 
+// annInfo: จัดกลุ่มประกาศ กำลังเกิดขึ้น / กำลังจะมาถึง / สิ้นสุดแล้ว
 function annInfo(a) {
   const now = Date.now(), s = new Date(a.starts_at), e = new Date(a.ends_at);
   const when = annDate(s) === annDate(e)
@@ -643,6 +692,7 @@ function annInfo(a) {
     chip: n === 0 ? `วันนี้ ${annTime(s)} น.` : n === 1 ? 'พรุ่งนี้' : `อีก ${n} วัน` };
 }
 
+// โหลดและวาดรายการประกาศ ปุ่ม "ยกเลิกประกาศ" แสดงเฉพาะประกาศที่ mine = true (server บอกมา)
 async function loadAnnouncements() {
   const list = (await api('/announcements')).map((a) => ({ ...a, ...annInfo(a) }));
   // เรียง: กำลังเกิดขึ้น > กำลังจะมาถึง (ใกล้สุดก่อน) > สิ้นสุดแล้ว; เวลาเท่ากันให้เรื่องที่กระทบมากก่อน (ลิฟต์/น้ำ/ไฟ)
@@ -701,6 +751,7 @@ const annAt = (f, k) => {
 const annSet = (f, k, date) => { f[`${k}_date`].value = dStr(date); f[`${k}_time`].value = tStr(date); };
 let annDur = 60; // นาที ระหว่างเริ่มกับสิ้นสุด ใช้เลื่อนเวลาสิ้นสุดตามเวลาเริ่ม
 
+// ตั้งค่าช่องวัน-เวลาของฟอร์มประกาศ (เลือกเวลาทีละ 15 นาที)
 function initAnnTimes() {
   const f = $('#annForm');
   ['starts_time', 'ends_time'].forEach((n) => {
@@ -739,6 +790,7 @@ $('#annForm').addEventListener('click', (e) => {
   annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
 });
 
+// สร้างประกาศ (สิทธิ์ announcement.manage) ส่งเวลาเป็น ISO string ให้ server ตรวจซ้ำ
 $('#annForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
@@ -764,6 +816,7 @@ $('#annForm').onsubmit = async (e) => {
   }
 };
 // ===== การแจ้งเตือน =====
+// กระดิ่ง: แสดงจำนวนที่ยังไม่อ่าน และรายการแจ้งเตือน กดรายการไหนเปิดเรื่องนั้นเลย
 async function loadNotifications() {
   const d = await api('/notifications');
   const count = $('#bellCount');
@@ -803,6 +856,7 @@ $('#notifList').onclick = (e) => {
   openDetail(item.dataset.req).catch(alertErr);
 };
 
+// กด "อ่านทั้งหมด" → server บันทึกเวลาที่อ่าน → ตัวเลขบนกระดิ่งหายไป
 $('#markRead').onclick = async () => {
   await api('/notifications/read', { method: 'POST' }).catch(() => {});
   loadNotifications().catch(() => {});

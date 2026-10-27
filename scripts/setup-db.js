@@ -1,3 +1,8 @@
+// =====================================================================
+// scripts/setup-db.js — สร้างฐานข้อมูลพร้อมข้อมูลตัวอย่าง (รันด้วย npm run db:setup)
+// 1) รันไฟล์ SQL ตามลำดับเวอร์ชัน  2) สร้างบัญชีเจ้าหน้าที่ทดสอบทุก Role  3) สร้างลูกบ้านทดสอบผูกกับสัญญา
+// รันซ้ำได้ บัญชีที่มีอยู่แล้วจะไม่ถูกเขียนทับ
+// =====================================================================
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -34,6 +39,7 @@ async function main() {
     await db.query(fs.readFileSync(path.join(__dirname, '../db', file), 'utf8'));
   }
 
+  // Hash รหัสผ่านครั้งเดียวแล้วใช้กับทุกบัญชีทดสอบ (เก็บเป็น Hash ในฐานข้อมูล ไม่มีรหัสจริง)
   const hash = await bcrypt.hash(PASSWORD, 12);
 
   for (const u of STAFF) {

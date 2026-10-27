@@ -1,3 +1,4 @@
+-- db/v3.sql — เพิ่มตารางประกาศ และสิทธิ์ announcement.read / announcement.manage
 -- ===== ประกาศล่วงหน้า รันซ้ำได้ ไม่ลบข้อมูลเดิม =====
 CREATE TABLE IF NOT EXISTS announcements (
   id         SERIAL PRIMARY KEY,
@@ -10,6 +11,7 @@ CREATE TABLE IF NOT EXISTS announcements (
   is_active  BOOLEAN NOT NULL DEFAULT TRUE,
   created_by INT NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม (ตรวจทั้งในโค้ดและในฐานข้อมูล)
   CHECK (ends_at > starts_at)
 );
 CREATE INDEX IF NOT EXISTS idx_announcements_ends ON announcements(ends_at);

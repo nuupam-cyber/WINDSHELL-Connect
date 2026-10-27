@@ -1,4 +1,5 @@
 // src/routes/admin-extra.js — ตั้งรหัสผ่านใหม่ให้ผู้ใช้ (เฉพาะผู้มีสิทธิ์ user.manage)
+// path: /api/admin/... (ทุก Route ต้องผ่าน authenticate จาก server.js และ requirePermission('user.manage'))
 const bcrypt = require('bcrypt');
 const { Router } = require('express');
 const db = require('../db');
@@ -8,6 +9,8 @@ const { HttpError } = require('../middleware/errorHandler');
 
 const router = Router();
 
+// POST /api/admin/users/:id/password — Admin ตั้งรหัสผ่านใหม่ให้ผู้ใช้ที่ลืมรหัส
+// Hash ด้วย bcrypt ก่อนบันทึก และ Log แค่ว่าตั้งให้ใคร ไม่บันทึกรหัสผ่าน
 router.post('/users/:id/password', requirePermission('user.manage'), async (req, res) => {
   const id = Number(req.params.id);
   const password = typeof req.body.password === 'string' ? req.body.password : '';
@@ -25,6 +28,7 @@ router.post('/users/:id/password', requirePermission('user.manage'), async (req,
 });
 
 // รายชื่อผู้ใช้ (รวมตำแหน่ง) สำหรับหน้าจัดการระบบ
+// ไม่ SELECT password_hash ออกมา เพื่อไม่ให้ Hash ไปแสดงบนหน้าเว็บ
 router.get('/users', requirePermission('user.manage'), async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, username, name, position, role_id, department_id, is_active

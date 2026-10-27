@@ -1,27 +1,46 @@
+-- =====================================================================
+-- db/schema.sql — โครงสร้างฐานข้อมูลหลัก + ข้อมูลตั้งต้น (รันด้วย npm run db:setup ตามด้วย v2-v5.sql)
+-- ทุกคำสั่งใช้ IF NOT EXISTS / ON CONFLICT DO NOTHING จึงรันซ้ำได้โดยไม่ลบข้อมูลเดิม
+--
+-- ความสัมพันธ์หลัก (สำหรับอธิบาย ER Diagram):
+--   roles 1 ─ N users                     ผู้ใช้หนึ่งคนมีหนึ่ง Role
+--   roles N ─ M permissions               ผ่านตารางกลาง role_permissions (นี่คือ ACL)
+--   departments 1 ─ N users / issue_categories / repair_requests
+--   buildings 1 ─ N units 1 ─ N contracts  สัญญา 1 ฉบับใช้สมัครผู้ใช้ได้ 1 คน (registered_user_id UNIQUE)
+--   users 1 ─ N repair_requests            ในฐานะผู้แจ้ง (requester_id) และช่าง (technician_id)
+--   repair_requests 1 ─ N request_status_history / attachments
+--   users 1 ─ N logs                       (user_id ว่างได้ เช่น ล็อกอินไม่สำเร็จ)
+-- =====================================================================
 -- ==== ตาราง ====
+-- ฝ่ายงาน: ช่างอาคาร, นิติบุคคล ใช้กำหนดว่าเรื่องไหนไปฝ่ายไหน และหัวหน้าฝ่ายเห็นเรื่องอะไร
 CREATE TABLE IF NOT EXISTS departments (
   id   SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE
 );
 
+-- Role (บทบาท) เช่น admin, dept_head, technician, resident
 CREATE TABLE IF NOT EXISTS roles (
   id          SERIAL PRIMARY KEY,
   name        VARCHAR(50) NOT NULL UNIQUE,
   description TEXT
 );
 
+-- Permission (สิทธิ์) ตั้งชื่อแบบ resource.action เช่น request.create
 CREATE TABLE IF NOT EXISTS permissions (
   id          SERIAL PRIMARY KEY,
   name        VARCHAR(100) NOT NULL UNIQUE,
   description TEXT
 );
 
+-- ตาราง ACL: Role ไหนมี Permission อะไร (Many-to-Many) Primary Key คู่ กันการให้สิทธิ์ซ้ำ
+-- ON DELETE CASCADE: ลบ Role หรือ Permission แล้วแถวที่ผูกกันจะถูกลบตาม
 CREATE TABLE IF NOT EXISTS role_permissions (
   role_id       INT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
   permission_id INT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
   PRIMARY KEY (role_id, permission_id)
 );
 
+-- อาคาร → ห้อง (units) ห้องหนึ่งอยู่ในอาคารเดียว
 CREATE TABLE IF NOT EXISTS buildings (
   id   SERIAL PRIMARY KEY,
   code VARCHAR(10) NOT NULL UNIQUE,
@@ -35,6 +54,9 @@ CREATE TABLE IF NOT EXISTS units (
   unit_no     VARCHAR(20) NOT NULL UNIQUE
 );
 
+-- ผู้ใช้: เก็บรหัสผ่านเป็น bcrypt hash เท่านั้น (password_hash) ไม่มีคอลัมน์รหัสผ่านจริง
+-- role_id ON DELETE RESTRICT: ลบ Role ที่ยังมีผู้ใช้ไม่ได้ (ป้องกันซ้ำกับโค้ดอีกชั้น)
+-- department_id ใช้กับเจ้าหน้าที่, unit_id ใช้กับลูกบ้าน
 CREATE TABLE IF NOT EXISTS users (
   id            SERIAL PRIMARY KEY,
   username      VARCHAR(50) NOT NULL UNIQUE,
@@ -56,12 +78,14 @@ CREATE TABLE IF NOT EXISTS contracts (
   registered_user_id INT UNIQUE REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- พื้นที่ส่วนกลาง เช่น ล็อบบี้ ลิฟต์ (ใช้เลือกตอนแจ้งเรื่องที่ไม่ได้อยู่ในห้อง)
 CREATE TABLE IF NOT EXISTS common_areas (
   id        SERIAL PRIMARY KEY,
   name      VARCHAR(100) NOT NULL UNIQUE,
   is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- ประเภทงาน แต่ละประเภทผูกกับฝ่ายที่รับผิดชอบ เรื่องที่แจ้งจะไปฝ่ายนั้นอัตโนมัติ
 CREATE TABLE IF NOT EXISTS issue_categories (
   id            SERIAL PRIMARY KEY,
   name          VARCHAR(100) NOT NULL UNIQUE,
@@ -69,6 +93,8 @@ CREATE TABLE IF NOT EXISTS issue_categories (
   is_active     BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- คำร้องแจ้งซ่อม (ข้อมูลหลักของระบบงาน)
+-- CHECK บังคับค่าที่เป็นไปได้ของ priority และ status ในระดับฐานข้อมูล
 CREATE TABLE IF NOT EXISTS repair_requests (
   id             SERIAL PRIMARY KEY,
   category_id    INT NOT NULL REFERENCES issue_categories(id),
@@ -87,10 +113,12 @@ CREATE TABLE IF NOT EXISTS repair_requests (
   -- ต้องระบุสถานที่เพียงหนึ่งอย่าง คือห้องหรือพื้นที่ส่วนกลาง
   CHECK ((unit_id IS NULL) <> (common_area_id IS NULL))
 );
+-- Index ช่วยให้ค้นตามผู้แจ้ง / ฝ่าย / ช่าง เร็วขึ้น (ใช้ตอนกรองรายการตามสิทธิ์)
 CREATE INDEX IF NOT EXISTS idx_requests_requester  ON repair_requests(requester_id);
 CREATE INDEX IF NOT EXISTS idx_requests_department ON repair_requests(department_id);
 CREATE INDEX IF NOT EXISTS idx_requests_technician ON repair_requests(technician_id);
 
+-- ประวัติการเปลี่ยนสถานะ ใครเปลี่ยน เมื่อไร จากอะไรเป็นอะไร พร้อมหมายเหตุ (ใช้แสดงไทม์ไลน์และการแจ้งเตือน)
 CREATE TABLE IF NOT EXISTS request_status_history (
   id          SERIAL PRIMARY KEY,
   request_id  INT NOT NULL REFERENCES repair_requests(id) ON DELETE CASCADE,
@@ -101,6 +129,8 @@ CREATE TABLE IF NOT EXISTS request_status_history (
   changed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ไฟล์แนบ: เก็บข้อมูลอ้างอิงไฟล์ (ชื่อเดิม, ชื่อที่เก็บแบบสุ่ม, ชนิด, ขนาด, ผู้อัปโหลด, วันเวลา, คำร้องที่เกี่ยวข้อง)
+-- data = เนื้อไฟล์ (BYTEA) | CHECK size_bytes > 0 กันไฟล์ว่าง
 CREATE TABLE IF NOT EXISTS attachments (
   id            SERIAL PRIMARY KEY,
   request_id    INT NOT NULL REFERENCES repair_requests(id) ON DELETE CASCADE,
@@ -113,6 +143,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   data          BYTEA
 );
 
+-- Log การใช้งาน: ผลลัพธ์จำกัดแค่ success / failure / denied
+-- ไม่มีคอลัมน์สำหรับรหัสผ่าน, Session ID หรือ Token ข้อมูลลับจึงไม่ถูกเก็บลง Log
 CREATE TABLE IF NOT EXISTS logs (
   id                 BIGSERIAL PRIMARY KEY,
   occurred_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -133,6 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_event    ON logs(event_type);
 INSERT INTO departments (name) VALUES ('ช่างอาคาร'), ('นิติบุคคล')
 ON CONFLICT (name) DO NOTHING;
 
+-- 4 Role ตั้งต้น ตามที่โจทย์กำหนด (อย่างน้อย 4 Role รวม Admin)
 INSERT INTO roles (name, description) VALUES
   ('admin',      'ผู้ดูแลระบบ ใช้ได้ทุกฟังก์ชัน'),
   ('dept_head',  'หัวหน้าฝ่าย รับเรื่องและมอบหมายช่าง'),
@@ -161,11 +194,13 @@ INSERT INTO permissions (name, description) VALUES
   ('log.read',              'ดู Log')
 ON CONFLICT (name) DO NOTHING;
 
+-- admin ได้ทุก Permission ที่มีอยู่ (CROSS JOIN = จับคู่ admin กับทุกสิทธิ์)
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'admin'
 ON CONFLICT DO NOTHING;
 
+-- สิทธิ์ตั้งต้นของแต่ละ Role (ตรงกับ ACCESS_MATRIX.md) Admin แก้เพิ่มทีหลังได้ในหน้า ACL
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM (VALUES

@@ -1,5 +1,8 @@
 <!doctype html>
 <html lang="th">
+<!-- public/index.html — หน้าเว็บหลักของทุก Role (ลูกบ้าน, ช่าง, หัวหน้าฝ่าย, Admin)
+     มีสองส่วน: #login (ยังไม่ล็อกอิน) และ #app (ล็อกอินแล้ว) app.js เป็นตัวสลับและเติมข้อมูล
+     element ที่มี data-perm="ชื่อสิทธิ์" จะถูกซ่อนถ้าผู้ใช้ไม่มีสิทธิ์นั้น (การตรวจจริงอยู่ที่ server) -->
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,6 +13,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- ===== หน้าเข้าสู่ระบบ / สมัครบัญชีลูกบ้าน ===== -->
   <section id="login">
     <div class="login-shell">
     <aside class="login-brand">
@@ -20,6 +24,7 @@
       </div>
     </aside>
     <div class="login-forms">
+    <!-- ฟอร์มเข้าสู่ระบบ → POST /api/auth/login -->
     <form id="loginForm" class="card login-card">
       <h1>เข้าสู่ระบบ</h1>
       <p class="muted">ใช้บัญชีลูกบ้านหรือบัญชีเจ้าหน้าที่</p>
@@ -36,6 +41,7 @@
       <p class="center"><a href="#" id="toRegister">ยังไม่มีบัญชี? สมัครลูกบ้าน</a></p>
     </form>
 
+    <!-- ฟอร์มสมัครลูกบ้านด้วยเลขที่สัญญา → POST /api/auth/register -->
     <form id="registerForm" class="card login-card hidden">
       <h1>สมัครบัญชีลูกบ้าน</h1>
       <p class="muted">กรอกเลขที่สัญญาเพื่อยืนยันว่าคุณเป็นผู้เช่าหรือเจ้าของห้อง</p>
@@ -62,7 +68,9 @@
     </div>
   </section>
 
+  <!-- ===== หน้าหลักหลังเข้าสู่ระบบ ===== -->
   <section id="app" class="hidden">
+    <!-- แถบบน: กระดิ่งแจ้งเตือน, บัญชีของฉัน, ปุ่มจัดการระบบ (แสดงเฉพาะผู้มี user.manage), ออกจากระบบ -->
     <header class="topbar">
       <div class="brand">
         <span class="logo sm"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 10c4-4 8 4 12 0s6-3 12 0M4 17c4-4 8 4 12 0s6-3 12 0M4 24c4-4 8 4 12 0s6-3 12 0"/></svg></span>
@@ -95,6 +103,7 @@
       <div class="hello"><h1>ภาพรวมเรื่องแจ้งซ่อม</h1><span id="scopeNote" class="muted"></span></div>
       <div id="summary" class="summary"></div>
 
+      <!-- ประกาศจากนิติบุคคล + ฟอร์มสร้างประกาศ (เฉพาะผู้มี announcement.manage) -->
       <div class="card ann-card">
         <div class="row between">
           <h2>ประกาศจากนิติบุคคล</h2>
@@ -147,6 +156,7 @@
         </details>
       </div>
 
+      <!-- งานที่ยังค้างอยู่: แต่ละ Role เห็นงานที่ตัวเองต้องทำต่อ -->
       <div id="todoCard" class="card todo-card">
         <div class="todo-head">
           <h2>งานที่ยังค้างอยู่</h2>
@@ -155,6 +165,7 @@
         <div id="todoList" class="todo-list"></div>
       </div>
 
+      <!-- แดชบอร์ด: แสดงเฉพาะผู้มีสิทธิ์ dashboard.view -->
       <div class="card dash-card" data-perm="dashboard.view">
         <h2>ภาพรวมงาน <span class="role">สำหรับหัวหน้าและผู้ดูแล</span></h2>
         <div id="dashStats" class="stat-grid"></div>
@@ -168,6 +179,7 @@
 
       <div class="work-grid">
         <div>
+      <!-- ฟอร์มแจ้งเรื่องใหม่ พร้อมแนบไฟล์ (เฉพาะผู้มี request.create) → POST /api/requests แบบ multipart/form-data -->
       <div class="card create-card" data-perm="request.create">
         <div class="create-head">
           <span class="create-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
@@ -232,6 +244,7 @@
           </div>
         </div>
         <div class="table-wrap">
+          <!-- ตารางรายการคำร้อง: server ส่งมาเฉพาะรายการที่ผู้ใช้มีสิทธิ์เห็น -->
           <table>
             <thead>
               <tr><th>เลขที่</th><th>ประเภท</th><th>สถานที่</th><th>ผู้แจ้ง</th><th>ผู้รับผิดชอบ</th><th>สถานะ</th><th>วันที่แจ้ง</th></tr>
@@ -250,8 +263,10 @@
     </main>
   </section>
 
+  <!-- ข้อความแจ้งเล็กๆ มุมจอ (toast) -->
   <div id="toasts" aria-live="polite"></div>
 
+  <!-- หน้าต่างรายละเอียดเรื่อง: app.js เติมเนื้อหา ปุ่มเปลี่ยนสถานะ และไฟล์แนบลงใน #detail -->
   <div id="modal" class="modal hidden">
     <div class="card modal-box">
       <button id="closeModal" class="close">×</button>
@@ -259,6 +274,7 @@
     </div>
   </div>
 
+  <!-- app.js = การทำงานของหน้านี้, account.js = กล่อง "บัญชีของฉัน" -->
   <script src="/app.js"></script>
   <script src="/account.js"></script>
 </body>

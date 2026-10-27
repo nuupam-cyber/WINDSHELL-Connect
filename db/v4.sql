@@ -1,3 +1,4 @@
+-- db/v4.sql — เพิ่มสิทธิ์ property.manage (จัดการอาคาร ห้อง สัญญา พื้นที่ส่วนกลาง) ให้ admin
 -- ===== สิทธิ์จัดการอาคาร ห้อง สัญญา และพื้นที่ส่วนกลาง รันซ้ำได้ =====
 INSERT INTO permissions (name, description) VALUES
   ('property.manage', 'จัดการอาคาร ห้อง สัญญา และพื้นที่ส่วนกลาง')

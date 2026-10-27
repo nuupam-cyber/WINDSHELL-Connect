@@ -1,3 +1,8 @@
+// =====================================================================
+// src/routes/notifications.js — กระดิ่งแจ้งเตือน (path: /api/notifications)
+// ไม่มีตารางแจ้งเตือนแยก สร้างรายการสดจากประวัติสถานะ คำร้องที่รอพิจารณา และประกาศ
+// "ยังไม่อ่าน" = เกิดหลังเวลา notif_seen_at ของผู้ใช้ (อัปเดตเมื่อกด "อ่านทั้งหมด")
+// =====================================================================
 const { Router } = require('express');
 const db = require('../db');
 
@@ -15,6 +20,7 @@ function statusText(h, me) {
   return `ไม่อนุมัติ${h.note ? `: ${h.note}` : ''}`;
 }
 
+// GET /api/notifications — คืน { unread: จำนวนที่ยังไม่อ่าน, items: รายการล่าสุดไม่เกิน 20 }
 router.get('/', async (req, res) => {
   const me = req.user.id;
   const perms = req.permissions;
@@ -25,6 +31,7 @@ router.get('/', async (req, res) => {
   const canAssign = perms.has('request.assign');
   const allDept = perms.has('request.read.all');
 
+  // 3 แหล่งข้อมูล ดึงพร้อมกัน: ประวัติสถานะที่เกี่ยวกับฉัน (คนอื่นเป็นคนเปลี่ยน), เรื่องรอพิจารณา, ประกาศ
   const [history, pending, notices] = await Promise.all([
     db.query(
       `SELECT h.changed_at AS at, h.to_status, h.note, r.id AS request_id, r.title,
@@ -89,6 +96,7 @@ router.get('/', async (req, res) => {
 });
 
 // ทำเครื่องหมายว่าอ่านทั้งหมดแล้ว
+// POST /api/notifications/read — กด "อ่านทั้งหมด" บันทึกเวลาที่อ่านล่าสุด
 router.post('/read', async (req, res) => {
   await db.query('UPDATE users SET notif_seen_at = NOW() WHERE id = $1', [req.user.id]);
   res.json({ ok: true });

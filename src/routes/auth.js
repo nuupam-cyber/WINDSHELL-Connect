@@ -1,3 +1,10 @@
+// =====================================================================
+// src/routes/auth.js — API การเข้าสู่ระบบ (path: /api/auth/...) ไม่ต้องล็อกอินก่อน ยกเว้น /me
+//   POST /login     เข้าสู่ระบบ
+//   POST /logout    ออกจากระบบ
+//   GET  /me        ข้อมูลผู้ใช้ที่ล็อกอินอยู่ + รายการสิทธิ์ (หน้าเว็บใช้ซ่อน/แสดงเมนู)
+//   POST /register  สมัครบัญชีลูกบ้านด้วยเลขที่สัญญา
+// =====================================================================
 const bcrypt = require('bcrypt');
 const { Router } = require('express');
 const db = require('../db');
@@ -13,6 +20,11 @@ const regenerate = (req) => new Promise((resolve, reject) =>
 const destroy = (req) => new Promise((resolve, reject) =>
   req.session.destroy((err) => (err ? reject(err) : resolve())));
 
+// POST /api/auth/login
+// 1) ตรวจว่ากรอกครบ  2) หา user จาก username (Parameterized Query กัน SQL Injection)
+// 3) bcrypt.compare(รหัสที่กรอก, password_hash) — เทียบกับ Hash ไม่มีการถอดรหัสกลับ
+// 4) ผิด → Log login failure พร้อมชื่อบัญชีที่พยายามเข้า (ไม่บันทึกรหัสผ่าน) และตอบข้อความกลางๆ ไม่บอกว่าผิดช่องไหน
+// 5) ถูก → สร้าง Session ID ใหม่ แล้วเก็บ userId ไว้ใน session → Log login success
 router.post('/login', async (req, res) => {
   const username = typeof req.body.username === 'string' ? req.body.username.trim() : '';
   const password = typeof req.body.password === 'string' ? req.body.password : '';
@@ -33,6 +45,7 @@ router.post('/login', async (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/auth/logout — Log การออกจากระบบ แล้วทำลาย session และลบ cookie
 router.post('/logout', async (req, res) => {
   const userId = req.session.userId;
   if (userId) await audit(req, { userId, eventType: 'logout', result: 'success' });
@@ -41,6 +54,8 @@ router.post('/logout', async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/auth/me — ต้องผ่าน authenticate ก่อน ส่งข้อมูลที่ปลอดภัยเท่านั้น (ไม่มี password_hash)
+// permissions ที่ส่งไปใช้แค่ซ่อน/แสดงปุ่มในหน้าเว็บ ส่วนการตรวจสิทธิ์จริงทำที่ server ทุกครั้ง
 router.get('/me', authenticate, async (req, res) => {
   const { id, username, name, role, department_id } = req.user;
   const { rows: [p] } = await db.query('SELECT position FROM users WHERE id = $1', [id]);
@@ -61,6 +76,8 @@ router.post('/register', async (req, res) => {
   if (password.length < 8) throw new HttpError(400, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
   if (!contractNo) throw new HttpError(400, 'กรุณากรอกเลขที่สัญญา');
 
+  // ใช้ Transaction + FOR UPDATE ล็อกแถวสัญญาไว้ กันสองคนสมัครด้วยเลขสัญญาเดียวกันพร้อมกัน
+  // สร้างผู้ใช้ Role resident ผูกกับห้องตามสัญญา แล้วบันทึกว่าสัญญานี้ถูกใช้สมัครแล้ว
   try {
     await db.withTransaction(async (client) => {
       const { rows: [c] } = await client.query(

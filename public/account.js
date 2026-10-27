@@ -1,4 +1,5 @@
 // "บัญชีของฉัน": ทุกบทบาทแก้ชื่อและเปลี่ยนรหัสผ่านของตัวเองได้ (ใช้ได้ทั้งหน้าหลักและหน้าจัดการระบบ)
+// accountApi: เรียก API แบบเดียวกับ api() ใน app.js (ไฟล์นี้ใช้ร่วมกับหน้า admin จึงมีของตัวเอง)
 async function accountApi(path, method, body) {
   const res = await fetch('/api' + path, {
     method, credentials: 'same-origin',
@@ -10,6 +11,7 @@ async function accountApi(path, method, body) {
   return data;
 }
 
+// openAccount: เปิดกล่อง "บัญชีของฉัน" ดึงข้อมูลจาก /api/auth/me แล้วแสดงฟอร์มแก้ชื่อและเปลี่ยนรหัสผ่าน
 async function openAccount(onChanged) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ROLE = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าแผนก', technician: 'เจ้าหน้าที่ช่าง', resident: 'ลูกบ้าน' };
@@ -53,6 +55,7 @@ async function openAccount(onChanged) {
     el.textContent = text; el.className = (ok ? 'ok-msg' : 'error') + ' dlg-err';
   };
 
+  // บันทึกชื่อ → PATCH /api/account/profile
   d.querySelector('#accName').onsubmit = async (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();
@@ -64,6 +67,7 @@ async function openAccount(onChanged) {
     } catch (err) { msg('name', err.message); }
   };
 
+  // เปลี่ยนรหัสผ่าน → POST /api/account/password (server ตรวจรหัสเดิมด้วย bcrypt.compare)
   d.querySelector('#accPw').onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;

@@ -1,3 +1,14 @@
+// =====================================================================
+// src/routes/admin.js — API ส่วน Admin (path: /api/admin/...) แยกจาก API ผู้ใช้ทั่วไปทาง Logical
+// ทุก Route ผ่าน authenticate (server.js) แล้วตรวจสิทธิ์เฉพาะของตัวเองด้วย requirePermission
+// ผู้ไม่มีสิทธิ์เรียก URL นี้ตรงๆ จะได้ 403 และถูกบันทึก Log access_denied
+//
+// หมวด → สิทธิ์ที่ต้องมี
+//   ผู้ใช้ → user.manage | Role → role.manage | Permission → permission.manage
+//   ACL (Role × Permission) → acl.manage | ประเภทงาน → category.manage
+//   อาคาร/ห้อง/สัญญา/พื้นที่ส่วนกลาง → property.manage | Log → log.read
+// ทุกการเพิ่ม/แก้/ลบ บันทึก Log ไว้ดูย้อนหลัง
+// =====================================================================
 const bcrypt = require('bcrypt');
 const { Router } = require('express');
 const db = require('../db');
@@ -10,6 +21,7 @@ const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS } = require('../config/per
 
 const router = Router();
 
+// Regex ตรวจรูปแบบข้อมูลฝั่ง server: ชื่อผู้ใช้, ชื่อ Role (a-z และ _), ชื่อสิทธิ์ (resource.action)
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,50}$/;
 const ROLE_RE = /^[a-z][a-z_]{2,49}$/;
 // ชื่อสิทธิ์รูปแบบ resource.action เช่น equipment.read
@@ -24,6 +36,7 @@ function checkPassword(pw) {
 const optText = (v) => (v ? String(v).trim() : null);
 
 // ===== ผู้ใช้ =====
+// หมายเหตุ: GET /users ตัวนี้ถูกบังด้วย GET /users ใน admin-extra.js ซึ่งถูกผูกก่อน (Express ใช้ตัวแรกที่ตรง)
 router.get('/users', requirePermission('user.manage'), async (req, res) => {
   const { rows } = await db.query(
     `SELECT u.id, u.username, u.name, u.role_id, r.name AS role,
@@ -36,6 +49,7 @@ router.get('/users', requirePermission('user.manage'), async (req, res) => {
   res.json(rows);
 });
 
+// POST /api/admin/users — Admin สร้างบัญชี (เช่น เจ้าหน้าที่) ตรวจข้อมูล แล้ว Hash รหัสผ่านด้วย bcrypt ก่อนบันทึก
 router.post('/users', requirePermission('user.manage'), async (req, res) => {
   const { username, password, name, role_id, department_id = null } = req.body;
   if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
@@ -61,6 +75,7 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
   const id = parseId(req.params.id);
   const b = req.body;
 
+  // ใช้ Transaction + FOR UPDATE เพื่อตรวจและแก้ข้อมูลผู้ใช้แบบไม่ชนกับคำขออื่น
   const detail = await withTransaction(async (client) => {
     const { rows: [cur] } = await client.query(
       `SELECT u.*, r.name AS role_name FROM users u
@@ -83,6 +98,8 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
     }
 
     // ป้องกันไม่ให้ไม่มี Admin เหลือ
+    // losesAdmin = ผู้ใช้นี้เป็น admin อยู่ แล้วกำลังถูกเปลี่ยน Role หรือถูกปิดบัญชี
+    // ถ้าไม่เหลือ admin ที่ใช้งานได้คนอื่นเลย → ปฏิเสธ (409) ระบบจะไม่มีวันไม่มี Admin
     const losesAdmin = cur.role_name === 'admin' && (role.name !== 'admin' || !isActive);
     if (losesAdmin) {
       const { rows: [{ count }] } = await client.query(
@@ -110,6 +127,7 @@ router.get('/departments', requirePermission('user.manage'), async (req, res) =>
 });
 
 // ===== Role =====
+// GET /api/admin/roles — รายการ Role พร้อมจำนวนผู้ใช้ในแต่ละ Role (ใช้แสดงและตัดสินว่าลบได้ไหม)
 router.get('/roles', requirePermission('role.manage'), async (req, res) => {
   const { rows } = await db.query(
     `SELECT r.id, r.name, r.description, COUNT(u.id)::int AS user_count
@@ -118,6 +136,7 @@ router.get('/roles', requirePermission('role.manage'), async (req, res) => {
   res.json(rows);
 });
 
+// POST /api/admin/roles — เพิ่ม Role ใหม่ผ่านเว็บ ไม่ต้องแก้โค้ด จากนั้นไปติ๊กสิทธิ์ให้ในหน้า ACL
 router.post('/roles', requirePermission('role.manage'), async (req, res) => {
   const name = String(req.body.name ?? '').trim();
   if (!ROLE_RE.test(name)) throw new HttpError(400, 'ชื่อ Role ใช้ a-z และ _ ความยาว 3-50 ตัวอักษร');
@@ -127,6 +146,7 @@ router.post('/roles', requirePermission('role.manage'), async (req, res) => {
   res.status(201).json(role);
 });
 
+// PATCH /api/admin/roles/:id — แก้ชื่อ/คำอธิบาย Role (ห้ามเปลี่ยนชื่อ admin เพราะโค้ดบางจุดอ้างชื่อนี้)
 router.patch('/roles/:id', requirePermission('role.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM roles WHERE id = $1', [id]);
@@ -143,6 +163,7 @@ router.patch('/roles/:id', requirePermission('role.manage'), async (req, res) =>
   res.json(role);
 });
 
+// DELETE /api/admin/roles/:id — ห้ามลบ admin และห้ามลบ Role ที่ยังมีผู้ใช้อยู่ (ตอบ 409)
 router.delete('/roles/:id', requirePermission('role.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM roles WHERE id = $1', [id]);
@@ -159,6 +180,7 @@ router.delete('/roles/:id', requirePermission('role.manage'), async (req, res) =
 });
 
 // ===== Permission =====
+// GET /api/admin/permissions — รายการ Permission ทั้งหมด
 router.get('/permissions', requirePermission('permission.manage'), async (req, res) => {
   const { rows } = await db.query('SELECT id, name, description FROM permissions ORDER BY name');
   res.json(rows);
@@ -174,6 +196,7 @@ router.post('/permissions', requirePermission('permission.manage'), async (req, 
   res.status(201).json(p);
 });
 
+// PATCH /api/admin/permissions/:id — แก้คำอธิบายได้เสมอ แต่ห้ามเปลี่ยนชื่อสิทธิ์ที่โค้ดใช้อยู่ (CODE_PERMISSIONS)
 router.patch('/permissions/:id', requirePermission('permission.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM permissions WHERE id = $1', [id]);
@@ -192,6 +215,7 @@ router.patch('/permissions/:id', requirePermission('permission.manage'), async (
   res.json(p);
 });
 
+// DELETE /api/admin/permissions/:id — ลบได้เฉพาะสิทธิ์ที่ไม่ได้ใช้ในโค้ด แถวใน role_permissions ถูกลบตาม (CASCADE)
 router.delete('/permissions/:id', requirePermission('permission.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM permissions WHERE id = $1', [id]);
@@ -204,6 +228,7 @@ router.delete('/permissions/:id', requirePermission('permission.manage'), async 
 });
 
 // ===== ACL: Role x Permission =====
+// GET /api/admin/acl — ข้อมูลสำหรับวาดตาราง ACL: Role ทั้งหมด, Permission ทั้งหมด, คู่ที่ติ๊กไว้ (grants)
 router.get('/acl', requirePermission('acl.manage'), async (req, res) => {
   const [roles, permissions, grants] = await Promise.all([
     db.query('SELECT id, name FROM roles ORDER BY id'),
@@ -213,6 +238,8 @@ router.get('/acl', requirePermission('acl.manage'), async (req, res) => {
   res.json({ roles: roles.rows, permissions: permissions.rows, grants: grants.rows });
 });
 
+// POST /api/admin/acl — ติ๊กให้สิทธิ์ (เพิ่มแถวใน role_permissions) ON CONFLICT DO NOTHING กันแถวซ้ำ
+// มีผลกับผู้ใช้ทันที (ภายใน cache 10 วินาทีของ middleware/auth.js) ไม่ต้องรีสตาร์ต server
 router.post('/acl', requirePermission('acl.manage'), async (req, res) => {
   const roleId = parseId(req.body.role_id);
   const permId = parseId(req.body.permission_id);
@@ -223,6 +250,7 @@ router.post('/acl', requirePermission('acl.manage'), async (req, res) => {
   res.json({ ok: true });
 });
 
+// DELETE /api/admin/acl/:roleId/:permissionId — ถอนสิทธิ์ (ห้ามถอนสิทธิ์จัดการระบบจาก admin)
 router.delete('/acl/:roleId/:permissionId', requirePermission('acl.manage'), async (req, res) => {
   const roleId = parseId(req.params.roleId);
   const permId = parseId(req.params.permissionId);
@@ -240,6 +268,7 @@ router.delete('/acl/:roleId/:permissionId', requirePermission('acl.manage'), asy
 });
 
 // ===== ประเภทงาน =====
+// ประเภทงาน: เพิ่ม/เปิด-ปิด/กำหนดฝ่ายที่รับผิดชอบ/บังคับกรอกรายละเอียด
 router.get('/categories', requirePermission('category.manage'), async (req, res) => {
   const { rows } = await db.query(
     `SELECT c.id, c.name, c.requires_detail, c.is_active, c.department_id, d.name AS department
@@ -281,6 +310,7 @@ router.patch('/categories/:id', requirePermission('category.manage'), async (req
 });
 
 // ===== อาคาร ห้อง สัญญา และพื้นที่ส่วนกลาง =====
+// ข้อมูลโครงการ: อาคาร ห้อง สัญญาเช่า/ซื้อ (ใช้ยืนยันตอนลูกบ้านสมัคร) และพื้นที่ส่วนกลาง
 router.get('/property/buildings', requirePermission('property.manage'), async (req, res) => {
   const { rows } = await db.query('SELECT id, code, name FROM buildings ORDER BY code');
   res.json(rows);
@@ -334,6 +364,7 @@ router.post('/property/contracts', requirePermission('property.manage'), async (
 });
 
 // เปิดหรือปิดสัญญา หรือถอนผู้สมัคร (ปิดบัญชีผู้ใช้เดิม เพื่อให้เลขที่สัญญาสมัครใหม่ได้)
+// unlink: ปิดบัญชีผู้ใช้เดิมของสัญญานี้ และปล่อยเลขสัญญาให้ผู้อยู่ใหม่สมัครได้ (เช่น ผู้เช่าย้ายออก)
 router.patch('/property/contracts/:id', requirePermission('property.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const detail = await withTransaction(async (client) => {
@@ -384,6 +415,8 @@ router.patch('/property/common-areas/:id', requirePermission('property.manage'),
 });
 
 // ===== Log =====
+// GET /api/admin/logs — ดู Log ย้อนหลัง (สิทธิ์ log.read) กรองได้ตาม: ช่วงเวลา (from/to), ผู้ใช้, ประเภทเหตุการณ์, ผลลัพธ์
+// ทุกเงื่อนไขใช้ Parameterized Query และแบ่งหน้า (page/limit สูงสุด 200 แถว)
 router.get('/logs', requirePermission('log.read'), async (req, res) => {
   const { from, to, user_id, event_type, result } = req.query;
   const params = [];
