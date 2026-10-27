@@ -41,9 +41,10 @@ router.post('/logout', async (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/me', authenticate, (req, res) => {
+router.get('/me', authenticate, async (req, res) => {
   const { id, username, name, role, department_id } = req.user;
-  res.json({ id, username, name, role, department_id, permissions: [...req.permissions] });
+  const { rows: [p] } = await db.query('SELECT position FROM users WHERE id = $1', [id]);
+  res.json({ id, username, name, role, department_id, position: p?.position || '', permissions: [...req.permissions] });
 });
 
 // สมัครบัญชีลูกบ้าน ต้องใช้เลขที่สัญญาที่ยังไม่เคยถูกใช้สมัคร

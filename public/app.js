@@ -4,6 +4,11 @@ const STATUS = {
   done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก',
 };
 let me = null;
+let DIR = []; // รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง
+const posByName = (n) => DIR.find((d) => d.name === n)?.position || '';
+const posById = (id) => DIR.find((d) => d.id === id)?.position || '';
+const person = (n) => (n ? esc(n) + (posByName(n) ? `<div class="muted small">${esc(posByName(n))}</div>` : '') : '—');
+const withPos = (n) => esc(n) + (posByName(n) ? ` <span class="muted">(${esc(posByName(n))})</span>` : '');
 const ROLE = {
   admin: ['ผู้ดูแลระบบ', 'ทุกเรื่องในระบบ'],
   dept_head: ['หัวหน้าแผนก', 'เรื่องในแผนกของคุณ'],
@@ -43,11 +48,10 @@ function renderShell() {
   $('#login').classList.toggle('hidden', !!me);
   $('#app').classList.toggle('hidden', !me);
   if (!me) return;
-  const nm = String(me.name).match(/^(.*?)\s*\(([^()]+)\)\s*$/); // ชื่อ (ตำแหน่ง)
-  const shownName = nm ? nm[1] : me.name;
+  const shownName = me.name;
   $('#userName').textContent = shownName;
   const [roleName, scope] = ROLE[me.role] || [me.role, ''];
-  const sub = nm ? nm[2] : roleName;
+  const sub = me.position || roleName;
   $('#userRole').textContent = sub;
   $('#userRole').classList.toggle('hidden', sub === shownName);
   $('#scopeNote').textContent = 'กำลังแสดง: ' + scope;
@@ -182,7 +186,7 @@ $('#statusFilter').onchange = () => renderRows();
 $('#searchBox').oninput = () => renderRows();
 
 async function loadRequests() {
-  allRows = await api('/requests');
+  [allRows, DIR] = await Promise.all([api('/requests'), api('/directory').catch(() => [])]);
   renderSummary();
   renderRows();
 }
@@ -209,7 +213,7 @@ function renderRows() {
         <td>${esc(r.category)}${r.priority === 'urgent' ? '<span class="badge urgent">ด่วน</span>' : ''}</td>
         <td>${esc(r.location)}</td>
         <td>${esc(r.requester_name)}</td>
-        <td>${esc(r.technician_name || '—')}</td>
+        <td>${person(r.technician_name)}</td>
         <td><span class="badge s-${r.status}">${STATUS[r.status]}</span></td>
         <td class="muted">${fmtDate(r.created_at)}</td>
       </tr>`).join('')
@@ -267,7 +271,7 @@ async function openDetail(id) {
 
     <h3>ประวัติการดำเนินการ</h3>
     <ul class="timeline">${r.history.map((h) => `
-      <li><b>${STATUS[h.to_status]}</b> · ${esc(h.changed_by)} ·
+      <li><b>${STATUS[h.to_status]}</b> · ${withPos(h.changed_by)} ·
         <span class="muted">${fmtDate(h.changed_at)}</span>
         ${h.note ? `<br>${esc(h.note)}` : ''}</li>`).join('')}</ul>
 
@@ -275,7 +279,7 @@ async function openDetail(id) {
       <div class="actions">
         <textarea id="actNote" rows="2" placeholder="หมายเหตุ (จำเป็นเมื่อไม่อนุมัติ)"></textarea>
         ${techs.length ? `<select id="techSel">${techs.map((t) =>
-          `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>` : ''}
+          `<option value="${t.id}">${esc(t.name)}${posById(t.id) ? ' — ' + esc(posById(t.id)) : ''}</option>`).join('')}</select>` : ''}
         ${acts.map(([a, label, kind]) =>
           `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}
       </div>` : ''}
@@ -399,7 +403,7 @@ async function loadComments(id) {
     $('#commentList').innerHTML = list.length
       ? list.map((c) => `
           <div class="comment">
-            <b>${esc(c.author)}</b> <span class="muted small">${fmtDate(c.created_at)}</span>
+            <b>${withPos(c.author)}</b> <span class="muted small">${fmtDate(c.created_at)}</span>
             <div>${esc(c.body)}</div>
           </div>`).join('')
       : '<p class="muted">ยังไม่มีความคิดเห็น</p>';

@@ -70,6 +70,7 @@ loadRoute('./routes/auth', '/api/auth');
 
 // ต้องล็อกอินก่อน
 loadRoute('./routes/requests', '/api/requests', authenticate);
+loadRoute('./routes/directory', '/api/directory', authenticate);
 loadRoute('./routes/admin-extra', '/api/admin', authenticate); // ตั้งรหัสผ่านใหม่
 loadRoute('./routes/admin', '/api/admin', authenticate);
 loadRoute('./routes/announcements', '/api/announcements', authenticate);
@@ -108,6 +109,14 @@ process.on('uncaughtException', (err) => {
 
 // 6. Port สำหรับ Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});
+(async () => {
+  // เพิ่มคอลัมน์ตำแหน่งให้ตาราง users (ทำซ้ำได้ ไม่เสียหาย)
+  try {
+    await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS position varchar(100)');
+  } catch (e) {
+    console.error('เพิ่มคอลัมน์ position ไม่สำเร็จ:', e.message);
+  }
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+})();
