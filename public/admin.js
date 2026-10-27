@@ -16,7 +16,7 @@ const STATUS = { pending: 'รอพิจารณา', assigned: 'มอบห
 // กล่องโต้ตอบมาตรฐาน (แทน prompt/confirm ของเบราว์เซอร์)
 // dialog({ title, intro, fields: [{name,label,value,type,required,minlength,placeholder,hint}], submit, danger })
 // คืนค่า object ของค่าที่กรอก หรือ null ถ้ายกเลิก
-function dialog({ title, intro = '', fields = [], submit = 'บันทึก', danger = false }) {
+function dialog({ title, intro = '', fields = [], rows = [], submit = 'บันทึก', danger = false }) {
   return new Promise((resolve) => {
     const d = document.createElement('dialog');
     d.className = 'dlg';
@@ -24,6 +24,8 @@ function dialog({ title, intro = '', fields = [], submit = 'บันทึก',
     d.innerHTML = `<form class="dlg-form" novalidate>
       <h2>${esc(title)}</h2>
       ${intro ? `<p class="muted">${esc(intro)}</p>` : ''}
+      ${rows.length ? `<dl class="info dlg-info">${rows.map(([k, v]) =>
+        `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
       ${fields.map((f) => `<label>${esc(f.label)}
         <input name="${esc(f.name)}" type="${f.type || 'text'}" value="${esc(f.value || '')}"
           placeholder="${esc(f.placeholder || '')}" ${f.minlength ? `minlength="${f.minlength}"` : ''}
@@ -31,8 +33,8 @@ function dialog({ title, intro = '', fields = [], submit = 'บันทึก',
         ${f.hint ? `<span class="muted small">${esc(f.hint)}</span>` : ''}</label>`).join('')}
       <p class="error dlg-err" role="alert"></p>
       <div class="dlg-actions">
-        <button type="button" class="ghost" data-cancel>ยกเลิก</button>
-        <button type="submit" class="${danger ? 'danger' : ''}">${esc(submit)}</button>
+        <button type="button" class="ghost" data-cancel>${submit === null ? 'ปิด' : 'ยกเลิก'}</button>
+        ${submit === null ? '' : `<button type="submit" class="${danger ? 'danger' : ''}">${esc(submit)}</button>`}
       </div>
     </form>`;
     document.body.appendChild(d);
@@ -55,7 +57,7 @@ function dialog({ title, intro = '', fields = [], submit = 'บันทึก',
     d.querySelector('[data-cancel]').onclick = () => d.close();
     d.addEventListener('close', () => { d.remove(); resolve(result); });
     d.showModal();
-    d.querySelector('input, button[type=submit]').focus();
+    (d.querySelector('input, button[type=submit]') || d.querySelector('[data-cancel]')).focus();
   });
 }
 const confirmBox = ({ title, message, ok = 'ยืนยัน', danger = false }) =>
@@ -191,7 +193,7 @@ async function renderUsers() {
         <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>Role</th><th>ฝ่าย</th><th>สถานะ</th><th></th></tr></thead>
         <tbody>${users.map((u) => `<tr>
           <td>${esc(u.username)}</td>
-          <td>${esc(u.name)}</td>
+          <td><a href="#" class="plink" data-person="${u.id}" title="ดูข้อมูลและสัญญาเช่า">${esc(u.name)}</a></td>
           <td class="muted">${esc(u.position || '—')}</td>
           <td><select data-field="role_id" data-id="${u.id}">${roleOpts(u.role_id)}</select></td>
           <td><select data-field="department_id" data-id="${u.id}">${deptOpts(u.department_id)}</select></td>
@@ -237,6 +239,30 @@ async function renderUsers() {
   };
 
   $('#content').onclick = async (e) => {
+    const pe = e.target.closest('[data-person]');
+    if (pe) {
+      e.preventDefault();
+      const u = users.find((x) => Number(x.id) === Number(pe.dataset.person));
+      if (!u) return;
+      const role = roles.find((r) => r.id === u.role_id)?.name;
+      run(async () => {
+        const rows = [['ชื่อผู้ใช้', u.username], ['ตำแหน่ง', u.position || '—'],
+          ['สถานะบัญชี', u.is_active ? 'ใช้งาน' : 'ปิดใช้งาน']];
+        if (role === 'resident') {
+          const c = (await api('/admin/property/contracts')).find((x) => Number(x.registered_user_id) === Number(u.id));
+          if (c) {
+            rows.push(['เลขที่สัญญาเช่า', c.contract_no], ['ห้อง', `${c.building_code} · ${c.unit_no}`],
+              ['สถานะสัญญา', c.is_active ? 'เปิดใช้งาน' : 'ปิดแล้ว']);
+          } else {
+            rows.push(['สัญญาเช่า', 'ไม่พบสัญญาที่ผูกกับบัญชีนี้']);
+          }
+        } else {
+          rows.push(['สัญญาเช่า', 'บัญชีเจ้าหน้าที่ ไม่มีสัญญาเช่า']);
+        }
+        await dialog({ title: u.name, intro: 'ข้อมูลผู้ใช้และสัญญาเช่า', rows, submit: null });
+      });
+      return;
+    }
     const rn = e.target.closest('[data-rename]');
     if (rn) {
       const v = await dialog({

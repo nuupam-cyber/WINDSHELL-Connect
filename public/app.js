@@ -364,6 +364,17 @@ async function openDetail(id) {
 
 $('#closeModal').onclick = () => $('#modal').classList.add('hidden');
 
+// ไม่ให้เบราว์เซอร์เติมชื่อผู้ใช้/รหัสผ่านให้เอง: ช่องจะแก้ไขได้เมื่อผู้ใช้คลิกหรือกด Tab เข้าไปเท่านั้น
+document.querySelectorAll('input[data-noauto]').forEach((i) => {
+  i.addEventListener('focus', () => { i.readOnly = false; }, { once: true });
+});
+const clearAutofill = () => {
+  const f = $('#loginForm');
+  if (f && !f.contains(document.activeElement)) f.reset();
+};
+window.addEventListener('pageshow', clearAutofill);
+setTimeout(clearAutofill, 400);
+
 async function init() {
   try { me = await api('/auth/me'); } catch { me = null; }
   renderShell();

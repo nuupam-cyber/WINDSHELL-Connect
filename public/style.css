@@ -189,3 +189,7 @@ dialog.dlg::backdrop{background:rgba(15,28,36,.5)}
 .dlg-form label{margin-bottom:14px}.dlg-form label .muted{display:block;margin-top:4px}
 .dlg-err:empty{display:none}.dlg-err{margin:0 0 8px}
 .dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+
+.plink{color:var(--ink);font-weight:500;text-decoration:underline dotted var(--primary);text-underline-offset:3px}
+.plink:hover{color:var(--primary)}
+.dlg-info{margin:0 0 6px}
