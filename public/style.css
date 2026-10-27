@@ -500,3 +500,6 @@ td select{min-width:130px}
   .actions select{width:100%}
   dl.info{margin:0}
 }
+
+.note-field{flex-basis:100%;margin:0;font-size:15px;font-weight:500}
+.note-field textarea{margin-top:6px}

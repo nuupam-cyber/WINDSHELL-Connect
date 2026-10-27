@@ -414,6 +414,7 @@ async function openDetail(id) {
   if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', 'ok']);
   if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'cancel']);
 
+  const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
   $('#detail').innerHTML = `
     <h2>${esc(r.title)} <span class="refno">${refOf(r)}</span></h2>
     <span class="badge s-${r.status}">${STATUS[r.status]}</span>
@@ -425,17 +426,6 @@ async function openDetail(id) {
       <dt>วันที่แจ้ง</dt><dd>${fmtDate(r.created_at)}</dd>
     </dl>
 
-    <h3>ไฟล์แนบ</h3>
-    <ul class="files">${r.attachments.map((a) => `
-      <li><a href="/api/attachments/${a.id}" target="_blank">${esc(a.original_name)}</a>
-        <span class="muted">${(a.size_bytes / 1024).toFixed(0)} KB</span></li>`).join('')
-      || '<li class="muted">ยังไม่มีไฟล์</li>'}</ul>
-    ${can('attachment.upload') ? `
-      <form id="uploadForm" class="row" style="margin-top:10px">
-        <input type="file" name="file" accept=".jpg,.jpeg,.png,.pdf" required>
-        <button>อัปโหลด</button>
-      </form>` : ''}
-
     <h3>ประวัติการดำเนินการ</h3>
     <ul class="timeline">${r.history.map((h) => `
       <li><b>${STATUS[h.to_status]}</b> · ${withPos(h.changed_by)} ·
@@ -445,7 +435,8 @@ async function openDetail(id) {
     ${acts.length ? `
       <div class="actions">
         ${techs.length ? pickerHtml(r, techs) : ''}
-        <textarea id="actNote" rows="2" placeholder="หมายเหตุ (จำเป็นเมื่อไม่อนุมัติ)"></textarea>
+${showNote ? `<label class="note-field">หมายเหตุ <span class="muted small"><b>จำเป็นเมื่อไม่อนุมัติ</b></span>
+          <textarea id="actNote" rows="2" maxlength="500" placeholder="เช่น เหตุผลที่ไม่อนุมัติ หรือข้อความถึงผู้รับผิดชอบ"></textarea></label>` : ''}
         ${acts.map(([a, label, kind]) =>
           `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}
       </div>` : ''}
@@ -454,7 +445,13 @@ async function openDetail(id) {
   $('#detail').onclick = async (e) => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
-    const body = { note: $('#actNote')?.value.trim() || undefined };
+    const noteEl = $('#actNote');
+    const body = { note: noteEl?.value.trim() || undefined };
+    if (b.dataset.act === 'reject' && !body.note) {
+      $('#detailMsg').textContent = 'กรุณาระบุเหตุผลในช่องหมายเหตุก่อนกดไม่อนุมัติ';
+      noteEl?.focus();
+      return;
+    }
     if (b.dataset.act === 'assign') {
       const t = document.querySelector('input[name=tech]:checked');
       if (!t) { $('#detailMsg').textContent = 'กรุณาเลือกผู้รับผิดชอบก่อน'; return; }
@@ -469,16 +466,6 @@ async function openDetail(id) {
       $('#detailMsg').textContent = err.message;
     }
   };
-
-  $('#uploadForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await api(`/requests/${id}/attachments`, { method: 'POST', body: new FormData(e.target) });
-      await openDetail(id);
-    } catch (err) {
-      $('#detailMsg').textContent = err.message;
-    }
-  });
 
     await loadComments(id);
   $('#modal').classList.remove('hidden');
