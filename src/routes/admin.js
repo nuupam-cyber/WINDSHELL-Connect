@@ -18,6 +18,7 @@ const { requirePermission, invalidateUser } = require('../middleware/auth');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
 const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES } = require('../config/permissions');
+const { positionsFor } = require('../config/positions');
 
 const router = Router();
 
@@ -78,7 +79,7 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
     if (!cur) throw new HttpError(404, 'ไม่พบผู้ใช้');
 
     const roleId = b.role_id !== undefined ? parseId(b.role_id) : cur.role_id;
-    const { rows: [role] } = await client.query('SELECT id, name FROM roles WHERE id = $1', [roleId]);
+    const { rows: [role] } = await client.query('SELECT id, name, description FROM roles WHERE id = $1', [roleId]);
     if (!role) throw new HttpError(400, 'ไม่พบ Role');
 
     const name = b.name !== undefined ? String(b.name).trim() : cur.name;
@@ -103,11 +104,13 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
       if (count === 0) throw new HttpError(409, 'ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน');
     }
 
+    // ตำแหน่งผูกกับ Role: เปลี่ยน Role แล้วตำแหน่งเดิมไม่อยู่ในรายการของ Role ใหม่ → ล้างตำแหน่ง (ไปเลือกใหม่)
+    const position = positionsFor(role.name, role.description).includes(cur.position) ? cur.position : null;
     await client.query(
       `UPDATE users SET name = $1, role_id = $2, department_id = $3, is_active = $4,
-              password_hash = COALESCE($5, password_hash)
-       WHERE id = $6`,
-      [name, role.id, deptId, isActive, hash, id]
+              password_hash = COALESCE($5, password_hash), position = $6
+       WHERE id = $7`,
+      [name, role.id, deptId, isActive, hash, position, id]
     );
     return `role ${cur.role_name}->${role.name}, active ${cur.is_active}->${isActive}${hash ? ', password changed' : ''}`;
   });
@@ -118,15 +121,19 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
 });
 
 // PATCH /api/admin/users/:id/profile — แก้ชื่อ-นามสกุล และตำแหน่ง (แยกคนละช่อง)
+// ตำแหน่งต้องอยู่ในรายการของ Role ผู้ใช้ (config/positions.js) หรือเว้นว่าง หรือเป็นค่าเดิม (ข้อมูลเก่าก่อนมีรายการ)
 router.patch('/users/:id/profile', requirePermission('user.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const name = String(req.body.name ?? '').trim();
   const position = String(req.body.position ?? '').trim();
   if (!name || name.length > 100) throw new HttpError(400, 'ชื่อต้องไม่ว่างและยาวไม่เกิน 100 ตัวอักษร');
-  if (position.length > 100) throw new HttpError(400, 'ตำแหน่งยาวเกิน 100 ตัวอักษร');
-  const { rowCount } = await db.query(
-    'UPDATE users SET name = $1, position = $2 WHERE id = $3', [name, position || null, id]);
-  if (!rowCount) throw new HttpError(404, 'ไม่พบผู้ใช้');
+  const { rows: [cur] } = await db.query(
+    'SELECT u.position, r.name AS role_name, r.description AS role_description FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1', [id]);
+  if (!cur) throw new HttpError(404, 'ไม่พบผู้ใช้');
+  if (position && position !== cur.position && !positionsFor(cur.role_name, cur.role_description).includes(position)) {
+    throw new HttpError(400, 'ตำแหน่งนี้ไม่ตรงกับ Role ของผู้ใช้');
+  }
+  await db.query('UPDATE users SET name = $1, position = $2 WHERE id = $3', [name, position || null, id]);
   invalidateUser(id);
   await audit(req, { eventType: 'user_update', resourceType: 'user', resourceId: id, result: 'success', detail: 'name/position' });
   res.json({ ok: true });
@@ -157,7 +164,8 @@ router.get('/roles', requirePermission('role.manage'), async (req, res) => {
     `SELECT r.id, r.name, r.description, COUNT(u.id)::int AS user_count
      FROM roles r LEFT JOIN users u ON u.role_id = r.id
      GROUP BY r.id ORDER BY r.id`);
-  res.json(rows.map((r) => ({ ...r, in_code: CODE_ROLES.includes(r.name) })));
+  // positions: ตำแหน่งที่เลือกได้ของ Role นี้ หน้า Admin ใช้สร้าง dropdown ตำแหน่ง
+  res.json(rows.map((r) => ({ ...r, in_code: CODE_ROLES.includes(r.name), positions: positionsFor(r.name, r.description) })));
 });
 
 // POST /api/admin/roles — เพิ่ม Role ใหม่ผ่านเว็บ ไม่ต้องแก้โค้ด จากนั้นไปติ๊กสิทธิ์ให้ในหน้า ACL

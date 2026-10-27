@@ -239,13 +239,22 @@ async function renderUsers() {
     `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
   const deptOpts = (sel) => '<option value="">— ไม่ระบุ —</option>' + depts.map((d) =>
     `<option value="${d.id}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+  // ตำแหน่งผูกกับ Role: ตัวเลือกมาจาก positions ของ Role นั้น (server ส่งมากับ /admin/roles และตรวจซ้ำตอนบันทึก)
+  // ตำแหน่งเดิมที่ไม่อยู่ในรายการ (ข้อมูลเก่า) แสดงเป็นตัวเลือก "(เดิม)" ไว้ ไม่หายเอง
+  const positionsOf = (roleId) => roles.find((r) => r.id === Number(roleId))?.positions || [];
+  const posOpts = (roleId, cur) => {
+    const list = positionsOf(roleId);
+    return '<option value="">— ไม่ระบุตำแหน่ง —</option>'
+      + (cur && !list.includes(cur) ? `<option value="${esc(cur)}" selected>${esc(cur)} (เดิม)</option>` : '')
+      + list.map((p) => `<option value="${esc(p)}" ${p === cur ? 'selected' : ''}>${esc(p)}</option>`).join('');
+  };
 
   $('#content').innerHTML = `
     <h2>เพิ่มผู้ใช้</h2>
     <form id="userForm" class="grid-form">
       <input name="username" placeholder="ชื่อผู้ใช้ (a-z 0-9 _ .)" autocomplete="off" readonly data-noauto required>
       <input name="name" placeholder="ชื่อ-นามสกุลจริง" required>
-      <input name="position" placeholder="ตำแหน่ง/หน้าที่ เช่น ช่างไฟฟ้า">
+      <select name="position" id="newPosition" aria-label="ตำแหน่ง">${posOpts(roles[0]?.id, null)}</select>
       <input name="password" type="password" placeholder="รหัสผ่าน อย่างน้อย 8 ตัว" autocomplete="new-password" readonly data-noauto required>
       <select name="role_id" required>${roleOpts(null)}</select>
       <select name="department_id">${deptOpts(null)}</select>
@@ -263,7 +272,9 @@ async function renderUsers() {
           + g.items.map((u) => `<tr>
           <td>${esc(u.username)}</td>
           <td>${esc(u.name)}</td>
-          <td class="muted">${esc(u.position || '—')}</td>
+          <td>${positionsOf(u.role_id).length || u.position
+            ? `<select data-pos="${u.id}" data-name="${esc(u.name)}" aria-label="ตำแหน่ง">${posOpts(u.role_id, u.position)}</select>`
+            : '<span class="muted">—</span>'}</td>
           <td><select data-field="role_id" data-id="${u.id}">${roleOpts(u.role_id)}</select></td>
           <td><select data-field="department_id" data-id="${u.id}">${deptOpts(u.department_id)}</select></td>
           <td><span class="badge ${u.is_active ? 's-done' : 's-cancelled'}">${u.is_active ? 'ใช้งาน' : 'ปิดแล้ว'}</span></td>
@@ -292,7 +303,18 @@ async function renderUsers() {
     }, renderUsers);
   };
 
+  // ฟอร์มเพิ่มผู้ใช้: เปลี่ยน Role แล้วรายการตำแหน่งเปลี่ยนตาม
+  $('#userForm').role_id.onchange = (e) => { $('#newPosition').innerHTML = posOpts(e.target.value, null); };
+
+  // เปลี่ยนตำแหน่งในตาราง → PATCH /admin/users/:id/profile (ส่งชื่อเดิมไปด้วย) / เปลี่ยน Role หรือฝ่าย → PATCH /admin/users/:id
+  // เปลี่ยน Role แล้วถ้าตำแหน่งเดิมไม่ตรงกับ Role ใหม่ server ล้างตำแหน่งให้ ต้องเลือกใหม่
   $('#content').onchange = (e) => {
+    const p = e.target.closest('select[data-pos]');
+    if (p) {
+      run(() => api(`/admin/users/${p.dataset.pos}/profile`, { method: 'PATCH', body: { name: p.dataset.name, position: p.value } })
+        .then(() => toast('บันทึกตำแหน่งแล้ว')), renderUsers);
+      return;
+    }
     const s = e.target.closest('select[data-field]');
     if (!s) return;
     run(() => api(`/admin/users/${s.dataset.id}`, {
@@ -315,7 +337,9 @@ async function renderUsers() {
     const flush = () => { if (head) head.hidden = !shown; };
     document.querySelectorAll('#content tbody tr').forEach((tr) => {
       if (tr.classList.contains('ugrp')) { flush(); head = tr; shown = 0; return; }
-      tr.hidden = !!q && !(tr.children[0].textContent + tr.children[1].textContent + tr.children[2].textContent).toLowerCase().includes(q);
+      // ช่องตำแหน่งเป็น select: ค้นจากตัวเลือกที่เลือกอยู่ ไม่ใช่ทุกตัวเลือก
+      const pos = tr.children[2].querySelector('select')?.selectedOptions[0]?.value ?? tr.children[2].textContent;
+      tr.hidden = !!q && !(tr.children[0].textContent + tr.children[1].textContent + pos).toLowerCase().includes(q);
       if (!tr.hidden) shown++;
     });
     flush();
@@ -325,17 +349,15 @@ async function renderUsers() {
     const rn = e.target.closest('[data-rename]');
     if (rn) {
       const v = await dialog({
-        title: 'แก้ไขข้อมูลผู้ใช้',
-        intro: `บัญชี: ${rn.closest('tr').children[0].textContent}`,
+        title: 'แก้ชื่อผู้ใช้',
+        intro: `บัญชี: ${rn.closest('tr').children[0].textContent} · ตำแหน่งเลือกได้จากช่องตำแหน่งในตาราง`,
         fields: [
           { name: 'name', label: 'ชื่อ-นามสกุล', value: rn.dataset.name, required: true, placeholder: 'เช่น สมชาย ใจดี' },
-          { name: 'position', label: 'ตำแหน่ง/หน้าที่', value: rn.dataset.position, placeholder: 'เช่น ช่างไฟฟ้า, หัวหน้าฝ่ายอาคาร',
-            hint: 'ไม่บังคับ ใช้แสดงต่อท้ายชื่อในหน้าต่างๆ และในไฟล์ส่งออก' },
         ],
         submit: 'บันทึกข้อมูล',
       });
       if (!v) return;
-      run(() => api(`/admin/users/${rn.dataset.rename}/profile`, { method: 'PATCH', body: { name: v.name, position: v.position } })
+      run(() => api(`/admin/users/${rn.dataset.rename}/profile`, { method: 'PATCH', body: { name: v.name, position: rn.dataset.position } })
         .then(() => toast('บันทึกข้อมูลผู้ใช้แล้ว')), renderUsers);
       return;
     }
