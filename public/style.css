@@ -4090,3 +4090,23 @@ html[data-theme="dark"] .side-foot a,html[data-theme="dark"] .side-foot button {
     padding: 18px;
   }
 }
+/* ขยายคอลัมน์ฟอร์มแจ้งเรื่องให้กว้างขึ้น อ่านและกรอกง่าย */
+@media (min-width: 1001px) {
+  .work-grid {
+    grid-template-columns: minmax(380px, 440px) minmax(0, 1fr);
+  }
+}
+
+.create-card .fstep {
+  font-size: 16px;
+}
+
+.file-up input[type="file"] {
+  padding: 14px;
+  font-size: 15px;
+}
+
+.file-up input[type="file"]::file-selector-button {
+  padding: 10px 18px;
+  font-size: 15px;
+}
