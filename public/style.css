@@ -132,3 +132,5 @@ ul.timeline{border-left:2px solid var(--line)}ul.timeline li{padding:0 0 12px 14
 .toast.error{border-left-color:#e5685b}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .label{font-size:14px;margin-bottom:12px}
+.role{font-size:12px;font-weight:500;background:var(--tint);color:var(--primary-d);padding:2px 8px;border-radius:4px;margin-left:6px;white-space:nowrap}
+#userRole{margin-left:0}

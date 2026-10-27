@@ -18,6 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // 3. Session
 app.use(session({
+  name: 'sid', // ให้ตรงกับ res.clearCookie('sid') ใน routes/auth.js
   secret: process.env.SESSION_SECRET || 'default_secret_key',
   resave: false,
   saveUninitialized: false,
@@ -44,9 +45,7 @@ const loadRoute = (routePath, apiEndpoint, ...middlewares) => {
   }
 };
 
-// /api/auth/me ต้องรู้ว่าใครล็อกอินอยู่ (login/logout ไม่ต้องผ่าน authenticate)
-// ถ้า /me ของคุณจัดการกรณียังไม่ล็อกอินเองอยู่แล้ว ให้ลบบรรทัดนี้ออก
-app.get('/api/auth/me', authenticate);
+// auth.js ใส่ authenticate ให้ /me เองอยู่แล้ว (login/register ไม่ต้องล็อกอิน)
 
 // ไม่ต้องล็อกอิน
 loadRoute('./routes/auth', '/api/auth');
@@ -75,6 +74,7 @@ app.use((err, req, res, next) => {
   const status = candidates.find((n) => Number.isInteger(n) && n >= 400 && n < 600) || 500;
   res.status(status).json({
     ok: false,
+    error: status === 500 ? 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' : err.message, // หน้าเว็บอ่านจาก error
     message: status === 500 ? 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' : err.message
   });
 });

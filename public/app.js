@@ -4,6 +4,12 @@ const STATUS = {
   done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก',
 };
 let me = null;
+const ROLE = {
+  admin: ['ผู้ดูแลระบบ', 'ทุกเรื่องในระบบ'],
+  dept_head: ['หัวหน้าแผนก', 'เรื่องในแผนกของคุณ'],
+  technician: ['เจ้าหน้าที่ช่าง', 'งานที่เกี่ยวกับคุณ'],
+  resident: ['ลูกบ้าน', 'เรื่องแจ้งซ่อมของคุณ'],
+};
 
 async function api(path, opts = {}) {
   const init = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
@@ -39,6 +45,9 @@ function renderShell() {
   if (!me) return;
   $('#userName').textContent = me.name;
   $('#hello').textContent = 'สวัสดี ' + me.name;
+  const [roleName, scope] = ROLE[me.role] || [me.role, ''];
+  $('#userRole').textContent = roleName;
+  $('#scopeNote').textContent = 'กำลังแสดง: ' + scope;
   document.querySelector('.work-grid').classList.toggle('solo', !can('request.create'));
   $('#adminLink').classList.toggle('hidden', !can('user.manage'));
   document.querySelectorAll('[data-perm]').forEach((el) =>

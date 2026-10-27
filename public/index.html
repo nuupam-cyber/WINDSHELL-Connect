@@ -85,13 +85,14 @@
           </div>
         </div>
         <span id="userName" class="muted"></span>
-        <a id="adminLink" class="btn ghost hidden" href="/admin">หลังบ้าน</a>
+        <span id="userRole" class="role"></span>
+        <a id="adminLink" class="btn ghost hidden" href="/admin">จัดการระบบ</a>
         <button id="logoutBtn" class="ghost">ออกจากระบบ</button>
       </div>
     </header>
 
     <main class="container">
-      <div class="hello"><h1 id="hello"></h1><span class="muted">เรื่องที่คุณเกี่ยวข้อง</span></div>
+      <div class="hello"><h1 id="hello"></h1><span id="scopeNote" class="muted"></span></div>
       <div id="summary" class="summary"></div>
 
       <div class="card ann-card">
@@ -102,7 +103,7 @@
         <div id="annList" class="ann-list"></div>
 
         <details class="ann-form hidden" data-perm="announcement.manage">
-          <summary>+ สร้างประกาศใหม่</summary>
+          <summary>+ สร้างประกาศใหม่ <span class="role">ผู้ดูแล</span></summary>
           <form id="annForm">
             <div class="grid-form">
               <select name="type">
@@ -128,7 +129,7 @@
       </div>
 
       <div class="card dash-card" data-perm="dashboard.view">
-        <h2>ภาพรวมงาน</h2>
+        <h2>ภาพรวมงาน <span class="role">สำหรับหัวหน้าและผู้ดูแล</span></h2>
         <div id="dashStats" class="stat-grid"></div>
         <div class="dash-cols">
           <div><h3>สถานะงาน</h3><div id="chartStatus"></div></div>
