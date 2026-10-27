@@ -22,7 +22,8 @@ const express = require('express');
 const session = require('express-session');
 const PgStore = require('connect-pg-simple')(session);
 const db = require('./db');
-const { authenticate, requirePermission } = require('./middleware/auth');
+const { authenticate, requireAnyPermission } = require('./middleware/auth');
+const { ADMIN_AREA_PERMISSIONS } = require('./config/permissions');
 const { errorHandler } = require('./middleware/errorHandler');
 const { withRefs } = require('./services/refs');
 
@@ -80,19 +81,20 @@ font-family:"Noto Sans Thai","Sarabun","Segoe UI",Tahoma,sans-serif;padding:16px
 h1{margin:0 0 8px;font-size:1.4rem;color:#b3261e}dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:16px 0}
 dt{color:#6b7a83}dd{margin:0;font-weight:600}a{color:#0f6d6d}</style></head><body><div class="box">
 <h1>403 · ไม่มีสิทธิ์เข้าถึงหน้า Admin</h1>
-<p>บัญชีนี้ไม่มีสิทธิ์ <code>user.manage</code> ระบบได้บันทึกการพยายามเข้าถึงครั้งนี้ไว้ใน Log แล้ว</p>
+<p>บัญชีนี้ไม่มีสิทธิ์ส่วนจัดการระบบ ระบบได้บันทึกการพยายามเข้าถึงครั้งนี้ไว้ใน Log แล้ว</p>
 <dl><dt>ชื่อ</dt><dd>${esc(u.name)}</dd><dt>บัญชี</dt><dd>${esc(u.username)}</dd>
 <dt>บทบาท</dt><dd>${esc(ROLE_TH[u.role] || u.role_description || u.role)}</dd><dt>เวลา</dt>
 <dd>${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</dd></dl>
 <a href="/">← กลับหน้าหลัก</a></div></body></html>`;
 
 // แยกส่วน Admin ทาง Logical: หน้า /admin ไม่อยู่ใน public/ จึงเปิดตรงๆ ไม่ได้
-// ต้องผ่าน 3 ด่าน: มี session → authenticate → requirePermission('user.manage') ถ้าไม่ผ่านจะถูกปฏิเสธแม้พิมพ์ URL เอง
-// ไม่ผ่านด่านสิทธิ์ (403): requirePermission บันทึก Log แล้ว ตัวจัดการ error ท้าย Route แสดงหน้า deniedPage แทน JSON
+// ต้องผ่าน 3 ด่าน: มี session → authenticate → มีสิทธิ์ส่วน Admin อย่างน้อย 1 อย่าง (ADMIN_AREA_PERMISSIONS)
+// ถ้าไม่ผ่านจะถูกปฏิเสธแม้พิมพ์ URL เอง ในหน้า Admin แต่ละแท็บแสดงตามสิทธิ์ และ API แต่ละตัวตรวจสิทธิ์ของตัวเองซ้ำ
+// ไม่ผ่านด่านสิทธิ์ (403): requireAnyPermission บันทึก Log แล้ว ตัวจัดการ error ท้าย Route แสดงหน้า deniedPage แทน JSON
 app.get('/admin',
   (req, res, next) => (req.session.userId ? next() : res.redirect('/')),
   authenticate,
-  requirePermission('user.manage'),
+  requireAnyPermission(...ADMIN_AREA_PERMISSIONS),
   (req, res) => res.sendFile(path.join(__dirname, '../private/admin.html')),
   (err, req, res, next) => (err.status === 403 && req.user
     ? res.status(403).type('html').send(deniedPage(req.user))

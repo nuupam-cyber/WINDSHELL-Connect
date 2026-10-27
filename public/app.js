@@ -26,12 +26,8 @@ const posByName = (n) => DIR.find((d) => d.name === n)?.position || '';
 const posById = (id) => DIR.find((d) => Number(d.id) === Number(id))?.position || '';
 const person = (n) => (n ? esc(n) + (posByName(n) ? `<div class="muted small">${esc(posByName(n))}</div>` : '') : '—');
 const withPos = (n) => esc(n) + (posByName(n) ? ` <span class="muted">(${esc(posByName(n))})</span>` : '');
-const ROLE = {
-  admin: ['ผู้ดูแลระบบ', 'ทุกเรื่องในระบบ'],
-  dept_head: ['หัวหน้าแผนก', 'เรื่องในแผนกของคุณ'],
-  technician: ['เจ้าหน้าที่ช่าง', 'งานที่เกี่ยวกับคุณ'],
-  resident: ['ลูกบ้าน', 'เรื่องแจ้งซ่อมของคุณ'],
-};
+// ชื่อไทยของ Role หลัก (Role ที่เพิ่มผ่านเว็บใช้คำอธิบายของ Role แทน)
+const ROLE = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าแผนก', technician: 'เจ้าหน้าที่ช่าง', resident: 'ลูกบ้าน' };
 
 // api(): ตัวกลางเรียก API ทุกตัว
 // - ส่ง cookie session ไปด้วย (credentials: same-origin)
@@ -149,11 +145,16 @@ function renderShell() {
   const shownName = me.name;
   $('#userName').textContent = shownName;
   // Role ที่เพิ่มผ่านเว็บไม่มีใน ROLE ใช้คำอธิบายของ Role เป็นชื่อไทยแทน
-  const [roleName, scope] = ROLE[me.role] || [me.role_description || me.role, ''];
+  const roleName = ROLE[me.role] || me.role_description || me.role;
+  // ขอบเขตข้อมูลที่เห็น คิดจากสิทธิ์ read ที่ได้จริง (ใช้ได้กับทุก Role รวมถึง Role ที่เพิ่มผ่านเว็บ)
+  const scope = can('request.read.all') ? 'ทุกเรื่องในระบบ'
+    : [can('request.read.dept') && 'เรื่องในแผนกของคุณ', can('request.read.assigned') && 'งานที่ได้รับมอบหมาย',
+      can('request.read.own') && 'เรื่องที่คุณแจ้ง'].filter(Boolean).join(' · ');
   const sub = me.position || roleName;
   $('#userRole').textContent = sub;
   $('#userRole').classList.toggle('hidden', sub === shownName);
-  $('#adminLink').classList.toggle('hidden', !can('user.manage'));
+  // ปุ่มจัดการระบบ: มีสิทธิ์ส่วน Admin อย่างน้อย 1 อย่าง (ตรงกับ ADMIN_AREA_PERMISSIONS ฝั่ง server)
+  $('#adminLink').classList.toggle('hidden', !['user.manage', 'role.manage', 'permission.manage', 'acl.manage', 'category.manage', 'property.manage', 'log.read'].some(can));
   document.querySelectorAll('[data-perm]').forEach((el) =>
     el.classList.toggle('hidden', !can(el.dataset.perm)));
 
@@ -614,9 +615,9 @@ async function openDetail(id) {
 
     <h3>ไฟล์แนบ</h3>
     <ul class="files" id="fileList">${(r.attachments || []).map((f) => `
-      <li><a href="/api/attachments/${f.id}" target="_blank" rel="noopener"${f.mime_type.startsWith('image/') ? ` data-preview="${f.id}"` : ''}>${esc(f.original_name)}</a>
+      <li>${can('attachment.read') ? `<a href="/api/attachments/${f.id}" target="_blank" rel="noopener"${f.mime_type.startsWith('image/') ? ` data-preview="${f.id}"` : ''}>${esc(f.original_name)}</a>` : esc(f.original_name)}
         <span class="muted small">${fmtSize(f.size_bytes)} · แนบโดย ${uploaderOf(f)}</span>
-        <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
+        ${can('attachment.read') ? `<a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>` : ''}
         ${f.can_delete ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
     ${canUpload ? `<label class="file-up">แนบรูปผลงาน (JPG, PNG หรือ PDF ไม่เกิน 5 MB)${r.needs_photo ? ' <b>จำเป็นก่อนกดดำเนินการเสร็จ</b>' : ''}
       <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>

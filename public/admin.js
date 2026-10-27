@@ -148,7 +148,14 @@ $('#themeBtn').onclick = () => {
 };
 paintTheme();
 
-api('/auth/me').then((m) => { $('#meName').textContent = m.name; $('#meBtn').title = `บัญชีของฉัน (${m.name})`; }).catch(() => {});
+// ME = ผู้ใช้ที่ล็อกอิน (โหลดตอนเปิดหน้า ดูท้ายไฟล์) · can() ใช้ซ่อนแท็บ/ปุ่มที่ไม่มีสิทธิ์ (server ตรวจซ้ำทุก API)
+let ME = { permissions: [] };
+const can = (p) => ME.permissions.includes(p);
+// สิทธิ์ที่ต้องมีเพื่อเห็นแต่ละแท็บ (ตรงกับ requirePermission ของ API ที่แท็บนั้นเรียก)
+const TAB_PERM = {
+  overview: 'user.manage', users: 'user.manage', roles: 'role.manage', permissions: 'permission.manage',
+  acl: 'acl.manage', categories: 'category.manage', property: 'property.manage', logs: 'log.read',
+};
 api('/notifications').then((n) => { if (n && n.unread > 0) $('#bellDot').classList.remove('hidden'); }).catch(() => {});
 
 // ===== ภาพรวม =====
@@ -172,7 +179,11 @@ const IC = {
 };
 // แท็บภาพรวม: ตัวเลขสรุปคำร้อง ผู้ใช้ และ Role
 async function renderOverview() {
-  const [st, users, roles] = await Promise.all([api('/requests/stats'), api('/admin/users'), api('/admin/roles')]);
+  // สถิติคำร้องต้องมี dashboard.view ถ้าไม่มีแสดงเป็นขีด
+  const [st, users, roles] = await Promise.all([
+    can('dashboard.view') ? api('/requests/stats') : { byStatus: [], urgentOpen: '—' },
+    api('/admin/users'), api('/admin/roles'),
+  ]);
   const n = (s) => st.byStatus.find((x) => x.status === s)?.n ?? 0;
   const total = st.byStatus.reduce((a, x) => a + x.n, 0);
   const active = users.filter((u) => u.is_active).length;
@@ -200,9 +211,9 @@ async function renderOverview() {
         <h3>ทางลัด</h3>
         <div class="quick">
           <button data-go="users">เพิ่มผู้ใช้</button>
-          <button class="ghost" data-go="categories">จัดการประเภทงาน</button>
-          <button class="ghost" data-go="property">จัดการห้อง/พื้นที่</button>
-          <button class="export" data-export>ส่งออกรายการแจ้งซ่อม (CSV)</button>
+          ${can('category.manage') ? '<button class="ghost" data-go="categories">จัดการประเภทงาน</button>' : ''}
+          ${can('property.manage') ? '<button class="ghost" data-go="property">จัดการห้อง/พื้นที่</button>' : ''}
+          ${can('request.export') ? '<button class="export" data-export>ส่งออกรายการแจ้งซ่อม (CSV)</button>' : ''}
         </div>
       </section>
     </div>`;
@@ -811,4 +822,13 @@ async function renderProperty() {
 }
 
 // เปิดหน้ามาแสดงแท็บภาพรวมก่อน
-openTab('overview');
+// เริ่มหน้า: โหลดผู้ใช้ → ซ่อนแท็บที่ไม่มีสิทธิ์ → เปิดแท็บแรกที่มีสิทธิ์
+api('/auth/me').then((m) => {
+  ME = m;
+  $('#meName').textContent = m.name;
+  $('#meBtn').title = `บัญชีของฉัน (${m.name})`;
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('hidden', !can(TAB_PERM[b.dataset.tab])));
+  const first = Object.keys(TAB_PERM).find((t) => can(TAB_PERM[t]));
+  if (first) openTab(first);
+  else $('#content').innerHTML = '<p class="muted">บัญชีนี้ยังไม่มีสิทธิ์ใช้งานส่วนจัดการระบบ</p>';
+}).catch((e) => { $('#content').innerHTML = `<p class="error">${esc(e.message)}</p>`; });

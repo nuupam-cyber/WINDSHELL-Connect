@@ -14,7 +14,7 @@ const { Router } = require('express');
 const db = require('../db');
 const { withTransaction } = db;
 const { audit } = require('../logger');
-const { requirePermission, invalidateUser } = require('../middleware/auth');
+const { requirePermission, requireAnyPermission, invalidateUser } = require('../middleware/auth');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
 const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES } = require('../config/permissions');
@@ -151,7 +151,8 @@ router.post('/users/:id/password', requirePermission('user.manage'), async (req,
   res.json({ ok: true });
 });
 
-router.get('/departments', requirePermission('user.manage'), async (req, res) => {
+// รายชื่อฝ่าย ใช้ทั้งแท็บผู้ใช้ และแท็บประเภทงาน (ผูกประเภทกับฝ่าย)
+router.get('/departments', requireAnyPermission('user.manage', 'category.manage'), async (req, res) => {
   const { rows } = await db.query('SELECT id, name FROM departments ORDER BY id');
   res.json(rows);
 });
@@ -159,7 +160,8 @@ router.get('/departments', requirePermission('user.manage'), async (req, res) =>
 // ===== Role =====
 // GET /api/admin/roles — รายการ Role พร้อมจำนวนผู้ใช้ในแต่ละ Role (ใช้แสดงและตัดสินว่าลบได้ไหม)
 // in_code = Role หลักที่ระบบใช้ชื่อนี้อยู่ (หน้าเว็บล็อกช่องชื่อและซ่อนปุ่มลบ server ตรวจซ้ำอีกชั้น)
-router.get('/roles', requirePermission('role.manage'), async (req, res) => {
+// แท็บผู้ใช้ (user.manage) ต้องใช้รายชื่อ Role สำหรับช่องเลือก Role/ตำแหน่ง จึงอ่านได้ทั้งสองสิทธิ์ (แก้ไข Role ยังต้องมี role.manage)
+router.get('/roles', requireAnyPermission('role.manage', 'user.manage'), async (req, res) => {
   const { rows } = await db.query(
     `SELECT r.id, r.name, r.description, COUNT(u.id)::int AS user_count
      FROM roles r LEFT JOIN users u ON u.role_id = r.id

@@ -24,4 +24,10 @@ const PROTECTED_ADMIN_PERMISSIONS = [
 // admin = ผู้ดูแล, dept_head = หัวหน้าฝ่าย, technician = รายชื่อช่างที่มอบหมายได้, resident = Role ของผู้สมัครด้วยเลขสัญญา
 const CODE_ROLES = ['admin', 'dept_head', 'technician', 'resident'];
 
-module.exports = { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES };
+// ADMIN_AREA_PERMISSIONS: มีสิทธิ์ใดสิทธิ์หนึ่งในนี้ → เข้าหน้า /admin ได้ และเห็นเฉพาะแท็บที่ตรงกับสิทธิ์ที่มี
+// เช่น Role ที่ได้แค่ log.read จะเห็นแท็บ Log อย่างเดียว
+const ADMIN_AREA_PERMISSIONS = [
+  'user.manage', 'role.manage', 'permission.manage', 'acl.manage', 'category.manage', 'property.manage', 'log.read',
+];
+
+module.exports = { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES, ADMIN_AREA_PERMISSIONS };

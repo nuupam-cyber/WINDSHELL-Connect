@@ -76,8 +76,18 @@ function requirePermission(name) {
   };
 }
 
+// requireAnyPermission('a', 'b'): ผ่านถ้ามีสิทธิ์ใดสิทธิ์หนึ่ง ใช้กับข้อมูลที่หลายแท็บต้องใช้ร่วมกัน
+// เช่น รายชื่อ Role ใช้ทั้งแท็บ Role (role.manage) และแท็บผู้ใช้ (user.manage) ไม่ผ่าน → Log access_denied + 403
+function requireAnyPermission(...names) {
+  return async (req, res, next) => {
+    if (names.some((n) => req.permissions.has(n))) return next();
+    await deny(req, 'route', null, `${req.method} ${req.originalUrl} requires one of ${names.join(', ')}`);
+    throw new HttpError(403, 'ไม่มีสิทธิ์ดำเนินการนี้');
+  };
+}
+
 // invalidateUser(id): ล้าง cache ของผู้ใช้คนหนึ่ง เรียกหลังแก้ข้อมูล/Role ของผู้ใช้ ให้มีผลทันที
 // invalidateUser(): ล้างทั้งหมด เรียกหลังเปลี่ยน ACL เพราะกระทบผู้ใช้ทุกคนใน Role นั้น
 const invalidateUser = (id) => (id === undefined ? cache.clear() : cache.delete(id));
 
-module.exports = { authenticate, requirePermission, invalidateUser };
+module.exports = { authenticate, requirePermission, requireAnyPermission, invalidateUser };

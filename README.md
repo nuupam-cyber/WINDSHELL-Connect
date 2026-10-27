@@ -32,7 +32,7 @@ Node.js + Express + PostgreSQL · Session (เก็บใน PostgreSQL) · RBA
 - `src/services/access.js` — เงื่อนไขเจ้าของข้อมูล · `src/services/refs.js` — เลขที่คำร้อง
 - `src/config/permissions.js` — Permission และ Role ที่โค้ดใช้อยู่ (ลบหรือเปลี่ยนชื่อผ่านเว็บไม่ได้)
 - `src/logger.js` — เขียน Log ลงตาราง `logs` (ไม่บันทึกรหัสผ่าน/Session ID)
-- `public/` หน้าผู้ใช้ทั่วไป · `private/admin.html` หน้า Admin (ต้องล็อกอินและมีสิทธิ์ `user.manage`)
+- `public/` หน้าผู้ใช้ทั่วไป · `private/admin.html` หน้า Admin (ต้องล็อกอินและมีสิทธิ์ส่วน Admin อย่างน้อย 1 อย่าง แต่ละแท็บแสดงตามสิทธิ์ที่มี)
 - `scripts/` — `setup-db.js` สร้างฐานข้อมูล · `seed-staff.js` เพิ่มบัญชีเจ้าหน้าที่ · `reset-demo.js` รีเซ็ตการสาธิต Permission
 
 ## สาธิตการเพิ่ม/ยกเลิก Permission (โจทย์ข้อ 6–7)
