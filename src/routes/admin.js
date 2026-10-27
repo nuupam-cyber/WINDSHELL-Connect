@@ -469,10 +469,18 @@ router.patch('/property/common-areas/:id', requirePermission('property.manage'),
 });
 
 // ===== Log =====
+// GET /api/admin/logs/event-types — ประเภทเหตุการณ์ที่มีใน Log จริง ใช้ทำตัวเลือกในช่องกรอง
+router.get('/logs/event-types', requirePermission('log.read'), async (req, res) => {
+  const { rows } = await db.query('SELECT DISTINCT event_type FROM logs ORDER BY event_type');
+  res.json(rows.map((r) => r.event_type));
+});
+
 // GET /api/admin/logs — ดู Log ย้อนหลัง (สิทธิ์ log.read) กรองได้ตาม: ช่วงเวลา (from/to), ผู้ใช้, ประเภทเหตุการณ์, ผลลัพธ์
-// ทุกเงื่อนไขใช้ Parameterized Query และแบ่งหน้า (page/limit สูงสุด 200 แถว)
+// ผู้ใช้: user = คำค้นบางส่วนของชื่อบัญชี/ชื่อจริง/ชื่อที่พยายามล็อกอิน (รองรับผู้ใช้หลักร้อยคน ไม่ต้องเลื่อนหาในรายการ)
+//         user_id = ระบุคนเดียว (ใช้ตอนคลิกชื่อในตาราง)
+// ทุกเงื่อนไขใช้ Parameterized Query และแบ่งหน้า (page/limit สูงสุด 200 แถว) ตอบ { rows, page, limit, has_more }
 router.get('/logs', requirePermission('log.read'), async (req, res) => {
-  const { from, to, user_id, event_type, result } = req.query;
+  const { from, to, user_id, user, event_type, result } = req.query;
   const params = [];
   const push = (value) => { params.push(value); return `$${params.length}`; };
   const conds = [];
@@ -488,17 +496,23 @@ router.get('/logs', requirePermission('log.read'), async (req, res) => {
     conds.push(`l.occurred_at <= ${push(d)}`);
   }
   if (user_id) conds.push(`l.user_id = ${push(parseId(user_id))}`);
+  if (user) {
+    // ILIKE + escape อักขระ % _ \ ที่ผู้ใช้พิมพ์ ให้ค้นเป็นข้อความธรรมดา
+    const ref = push(`%${String(user).trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    conds.push(`(u.username ILIKE ${ref} OR u.name ILIKE ${ref} OR l.username_attempted ILIKE ${ref})`);
+  }
   if (event_type) conds.push(`l.event_type = ${push(String(event_type))}`);
   if (result) conds.push(`l.result = ${push(String(result))}`);
 
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-  const limitRef = push(limit);
+  // ดึงเกินมา 1 แถว (limit + 1) เพื่อรู้ว่ามีหน้าถัดไปไหม แล้วตัดออกก่อนส่ง
+  const limitRef = push(limit + 1);
   const offsetRef = push((page - 1) * limit);
 
   const { rows } = await db.query(
-    `SELECT l.id, l.occurred_at, l.user_id, u.username, l.username_attempted,
+    `SELECT l.id, l.occurred_at, l.user_id, u.username, u.name AS user_name, l.username_attempted,
             l.event_type, l.resource_type, l.resource_id, l.result, l.ip, l.detail
      FROM logs l LEFT JOIN users u ON u.id = l.user_id
      ${where}
@@ -506,7 +520,7 @@ router.get('/logs', requirePermission('log.read'), async (req, res) => {
      LIMIT ${limitRef} OFFSET ${offsetRef}`,
     params
   );
-  res.json(rows);
+  res.json({ rows: rows.slice(0, limit), page, limit, has_more: rows.length > limit });
 });
 
 module.exports = router;

@@ -656,52 +656,85 @@ async function renderCategories() {
 }
 
 // ===== Log =====
-// แท็บ Log: กรองตามช่วงวันที่ ผู้ใช้ ผลลัพธ์ (success/failure/denied) และประเภทเหตุการณ์
+// แท็บ Log: กรองตามช่วงวันที่ ผู้ใช้ ประเภทเหตุการณ์ และผลลัพธ์ (success/failure/denied) แบ่งหน้าละ 50 รายการ
+// ผู้ใช้: พิมพ์ค้นบางส่วนของชื่อบัญชีหรือชื่อจริง (แทน dropdown ที่ยาวเป็นร้อยคน) หรือคลิกชื่อในตารางเพื่อดูเฉพาะคนนั้น
 // ส่งเงื่อนไขเป็น query string ไปที่ GET /api/admin/logs ให้ server ค้นในฐานข้อมูล
+const RESULT_TH = { success: 'สำเร็จ', failure: 'ล้มเหลว', denied: 'ถูกปฏิเสธ' };
 async function renderLogs() {
-  const logUsers = await api('/admin/users').catch(() => []);
+  const types = await api('/admin/logs/event-types').catch(() => []);
   $('#content').innerHTML = `
-    <form id="logForm" class="row wrap">
-      <input type="date" name="from" title="ตั้งแต่วันที่">
-      <input type="date" name="to" title="ถึงวันที่">
-      <select name="user_id" title="ผู้ใช้">
-        <option value="">ทุกผู้ใช้</option>
-        ${logUsers.map((u) => `<option value="${u.id}">${esc(u.name)} (${esc(u.username)})</option>`).join('')}
-      </select>
-      <select name="result">
-        <option value="">ทุกผลลัพธ์</option>
-        <option value="success">success</option>
-        <option value="failure">failure</option>
-        <option value="denied">denied</option>
-      </select>
-      <input name="event_type" placeholder="ประเภท เช่น login">
-      <button>ค้นหา</button>
+    <form id="logForm" class="log-filter">
+      <label>ตั้งแต่วันที่<input type="date" name="from"></label>
+      <label>ถึงวันที่<input type="date" name="to"></label>
+      <label class="wide">ผู้ใช้<input type="search" name="user" placeholder="พิมพ์ชื่อบัญชีหรือชื่อ เช่น tech01" autocomplete="off"></label>
+      <label>ประเภทเหตุการณ์<select name="event_type"><option value="">ทั้งหมด</option>
+        ${types.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></label>
+      <label>ผลลัพธ์<select name="result"><option value="">ทั้งหมด</option>
+        ${Object.entries(RESULT_TH).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+      <div class="log-actions">
+        <button>ค้นหา</button>
+        <button type="button" class="ghost" id="logClear">ล้างตัวกรอง</button>
+      </div>
+      <input type="hidden" name="user_id">
     </form>
-    <div id="logTable" class="table-wrap" style="margin-top:16px"></div>`;
+    <p id="logChip" class="log-chip hidden"></p>
+    <div id="logTable" class="table-wrap" style="margin-top:12px"></div>
+    <div class="log-pager">
+      <button type="button" class="ghost small" id="logPrev">‹ ก่อนหน้า</button>
+      <span id="logPage" class="muted small"></span>
+      <button type="button" class="ghost small" id="logNext">ถัดไป ›</button>
+    </div>`;
 
+  const form = $('#logForm');
+  let page = 1;
   const load = async () => {
-    const f = formData($('#logForm'));
+    const f = formData(form);
     const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
     if (f.to) q.set('to', `${f.to}T23:59:59`);
-    const rows = await api(`/admin/logs?${q}`);
+    q.set('page', page);
+    const { rows, has_more } = await api(`/admin/logs?${q}`);
+    // ชิปบอกว่ากำลังดู Log ของคนเดียว (มาจากการคลิกชื่อในตาราง) กด × เพื่อกลับไปดูทุกคน
+    $('#logChip').classList.toggle('hidden', !f.user_id);
+    $('#logChip').innerHTML = f.user_id
+      ? `กำลังดูเฉพาะ <b>${esc(form.dataset.who || '')}</b> <button type="button" class="link-btn" id="logChipX">× ดูทุกคน</button>`
+      : '';
     $('#logTable').innerHTML = `
       <table>
         <thead><tr><th>เวลา</th><th>ผู้ใช้</th><th>เหตุการณ์</th><th>ทรัพยากร</th><th>ผล</th><th>IP</th><th>รายละเอียด</th></tr></thead>
         <tbody>${rows.map((l) => `<tr>
           <td class="muted">${fmtDate(l.occurred_at)}</td>
-          <td>${esc(l.username || l.username_attempted || '—')}</td>
+          <td>${l.user_id
+            ? `<button type="button" class="link-btn" data-uid="${l.user_id}" data-who="${esc(l.username)}" title="ดูเฉพาะผู้ใช้นี้">${esc(l.username)}</button>${l.user_name ? `<div class="muted small">${esc(l.user_name)}</div>` : ''}`
+            : esc(l.username_attempted || '—')}</td>
           <td><code>${esc(l.event_type)}</code></td>
           <td>${esc(l.resource_type ? `${l.resource_type} ${l.resource_id ?? ''}` : '')}</td>
-          <td><span class="badge r-${l.result}">${esc(l.result)}</span></td>
+          <td><span class="badge r-${l.result}">${esc(RESULT_TH[l.result] || l.result)}</span></td>
           <td class="muted">${esc(l.ip)}</td>
           <td>${esc(l.detail)}</td>
         </tr>`).join('') || '<tr><td colspan="7" class="empty">ไม่พบรายการ</td></tr>'}</tbody>
       </table>`;
+    $('#logPage').textContent = `หน้า ${page}`;
+    $('#logPrev').disabled = page === 1;
+    $('#logNext').disabled = !has_more;
   };
+  const reload = () => load().catch((err) => toast(err.message, 'error'));
 
-  $('#logForm').onsubmit = (e) => {
-    e.preventDefault();
-    load().catch((err) => toast(err.message, 'error'));
+  form.onsubmit = (e) => { e.preventDefault(); page = 1; reload(); };
+  $('#logClear').onclick = () => { form.reset(); form.user_id.value = ''; page = 1; reload(); };
+  $('#logPrev').onclick = () => { page = Math.max(1, page - 1); reload(); };
+  $('#logNext').onclick = () => { page += 1; reload(); };
+  // คลิกชื่อผู้ใช้ในตาราง → กรองเฉพาะคนนั้น (ล้างคำค้นเดิม) · คลิก × ที่ชิป → กลับไปดูทุกคน
+  $('#content').onclick = (e) => {
+    const u = e.target.closest('[data-uid]');
+    if (u) {
+      form.user_id.value = u.dataset.uid;
+      form.user.value = '';
+      form.dataset.who = u.dataset.who;
+      page = 1;
+      reload();
+      return;
+    }
+    if (e.target.closest('#logChipX')) { form.user_id.value = ''; page = 1; reload(); }
   };
   await load();
 }

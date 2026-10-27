@@ -4131,3 +4131,51 @@ dialog.img-view {
   display: inline-block;
   margin-top: 12px;
 }
+
+/* แท็บ Log: ฟอร์มกรองแบบมีป้ายกำกับ จัดเป็นตาราง ช่องผู้ใช้กว้างกว่าช่องอื่น (renderLogs ใน admin.js) */
+.log-filter {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(160px,1fr));
+  gap: 10px 12px;
+  align-items: end;
+}
+
+.log-filter label {
+  display: grid;
+  gap: 4px;
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+.log-filter label.wide {
+  grid-column: span 2;
+}
+
+.log-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--tint);
+}
+
+.log-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media(max-width:560px) {
+  .log-filter label.wide {
+    grid-column: auto;
+  }
+}
