@@ -4098,3 +4098,36 @@ dialog.img-view {
 .cam-btn:hover {
   background: var(--tint);
 }
+
+/* การ์ดแจ้ง "ยังไม่มีสิทธิ์ใช้งาน" แสดงแทนหน้าหลักเมื่อบัญชีไม่ได้รับสิทธิ์ใดเลย (renderShell ใน app.js) */
+.no-access {
+  max-width: 520px;
+  margin: 48px auto;
+  padding: 36px 28px;
+  text-align: center;
+}
+
+.no-access-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--tint);
+  color: var(--ink);
+}
+
+.no-access-ico svg {
+  width: 30px;
+  height: 30px;
+}
+
+.no-access h2 {
+  margin: 0 0 8px;
+}
+
+.no-access .btn {
+  display: inline-block;
+  margin-top: 12px;
+}

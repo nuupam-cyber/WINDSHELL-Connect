@@ -52,6 +52,8 @@ async function api(path, opts = {}) {
 // can('request.create') → true/false ใช้ตัดสินว่าจะแสดงปุ่ม/ส่วนไหน
 // esc(): แปลงอักขระพิเศษ HTML ก่อนแสดงข้อมูลจากผู้ใช้ ป้องกัน XSS (สคริปต์แปลกปลอมฝังมากับข้อความ)
 const can = (p) => !!me && me.permissions.includes(p);
+// canReadRequests(): มีสิทธิ์ดูเรื่องแจ้งซ่อมอย่างน้อย 1 ขอบเขต (ทั้งหมด / ของตน / ในฝ่าย / ที่ได้รับมอบหมาย)
+const canReadRequests = () => ['request.read.all', 'request.read.own', 'request.read.dept', 'request.read.assigned'].some((p) => can(p));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDay = (d) => new Date(d).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -154,14 +156,15 @@ function renderShell() {
   $('#userRole').textContent = sub;
   $('#userRole').classList.toggle('hidden', sub === shownName);
   // ปุ่มจัดการระบบ: มีสิทธิ์ส่วน Admin อย่างน้อย 1 อย่าง (ตรงกับ ADMIN_AREA_PERMISSIONS ฝั่ง server)
-  $('#adminLink').classList.toggle('hidden', !['user.manage', 'role.manage', 'permission.manage', 'acl.manage', 'category.manage', 'property.manage', 'log.read'].some(can));
+  const hasAdmin = ['user.manage', 'role.manage', 'permission.manage', 'acl.manage', 'category.manage', 'property.manage', 'log.read'].some(can);
+  $('#adminLink').classList.toggle('hidden', !hasAdmin);
   document.querySelectorAll('[data-perm]').forEach((el) =>
     el.classList.toggle('hidden', !can(el.dataset.perm)));
 
   // ปรับหน้าตามขอบเขตงานของ Role (ตัดสินจากสิทธิ์ ไม่ผูกกับชื่อ Role จึงใช้กับ Role ที่เพิ่มผ่านเว็บได้ด้วย)
   // - ไม่มีสิทธิ์ดูเรื่องแจ้งซ่อม (request.read.*) เช่น ผู้ประกาศ → ซ่อนสรุป งานค้าง รายการเรื่อง เหลือหน้าประกาศ
   // - แจ้งเรื่องได้ต้องมีทั้ง request.create และบัญชีผูกกับห้องชุด (server ตรวจซ้ำทั้งสองข้อ)
-  const readsRequests = ['request.read.all', 'request.read.own', 'request.read.dept', 'request.read.assigned'].some(can);
+  const readsRequests = canReadRequests();
   const canCreate = can('request.create') && me.has_unit;
   document.querySelectorAll('.needs-requests').forEach((el) => el.classList.toggle('hidden', !readsRequests));
   document.querySelectorAll('[data-perm="request.create"]').forEach((el) => el.classList.toggle('hidden', !canCreate));
@@ -171,6 +174,20 @@ function renderShell() {
   document.querySelector('.ann-form').open = !readsRequests && can('announcement.manage');
   $('#pageTitle').textContent = readsRequests ? 'ภาพรวมเรื่องแจ้งซ่อม' : 'ประกาศจากนิติบุคคล';
   $('#scopeNote').textContent = readsRequests ? 'กำลังแสดง: ' + scope : 'จัดการและติดตามประกาศถึงลูกบ้าน';
+  // ไม่มีสิทธิ์ใช้งานหน้าหลักเลย (ไม่ดูเรื่อง ไม่แจ้งเรื่อง ไม่มีประกาศ ไม่มีแดชบอร์ด) → แสดงการ์ดแจ้งแทนหน้าว่าง
+  // ถ้ามีแค่สิทธิ์ฝั่ง Admin แจ้งให้ไปหน้าจัดการระบบแทน
+  const usesMain = readsRequests || canCreate || can('announcement.read') || can('announcement.manage') || can('dashboard.view');
+  $('#noAccess').classList.toggle('hidden', usesMain);
+  document.querySelector('.hello').classList.toggle('hidden', !usesMain);
+  if (!usesMain) {
+    $('#noAccessUser').textContent = me.username;
+    $('#noAccessRole').textContent = roleName;
+    $('#noAccessTitle').textContent = hasAdmin ? 'บัญชีนี้ใช้งานส่วนจัดการระบบ' : 'บัญชีนี้ยังไม่มีสิทธิ์ใช้งาน';
+    $('#noAccessText').textContent = hasAdmin
+      ? 'หน้าหลักไม่มีส่วนที่บทบาทของคุณใช้งานได้ ไปที่หน้าจัดการระบบเพื่อทำงานตามสิทธิ์ที่ได้รับ'
+      : 'ผู้ดูแลระบบยังไม่ได้กำหนดสิทธิ์ให้บทบาทของคุณ กรุณาติดต่อนิติบุคคลหรือผู้ดูแลระบบ';
+    $('#noAccessAdmin').classList.toggle('hidden', !hasAdmin);
+  }
   if (canCreate) loadOptions().catch(alertErr);
   if (readsRequests) loadRequests().catch(alertErr);
   loadAnnouncements().catch(() => {});
@@ -997,7 +1014,7 @@ $('#markRead').onclick = async () => {
   loadNotifications().catch(() => {});
 };
 
-// ตรวจการแจ้งเตือนใหม่ทุก 60 วินาที
+// ตรวจการแจ้งเตือนใหม่ทุก 60 วินาที (รายการเรื่องโหลดเฉพาะผู้มีสิทธิ์ดู)
 setInterval(() => {
-  if (me) { loadNotifications().catch(() => {}); loadAnnouncements().catch(() => {}); loadRequests().catch(() => {}); }
+  if (me) { loadNotifications().catch(() => {}); loadAnnouncements().catch(() => {}); if (canReadRequests()) loadRequests().catch(() => {}); }
 }, 60000);

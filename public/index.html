@@ -104,6 +104,15 @@
       <div class="hello"><h1 id="pageTitle">ภาพรวมเรื่องแจ้งซ่อม</h1><span id="scopeNote" class="muted"></span></div>
       <div id="summary" class="summary needs-requests"></div>
 
+      <!-- บัญชีที่ยังไม่ได้รับสิทธิ์ใช้งานหน้าหลักเลย (app.js renderShell แสดงแทนทุกส่วน) -->
+      <div id="noAccess" class="card no-access hidden" role="status">
+        <span class="no-access-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+        <h2 id="noAccessTitle">บัญชีนี้ยังไม่มีสิทธิ์ใช้งาน</h2>
+        <p id="noAccessText" class="muted">ผู้ดูแลระบบยังไม่ได้กำหนดสิทธิ์ให้บทบาทของคุณ กรุณาติดต่อนิติบุคคลหรือผู้ดูแลระบบ</p>
+        <p class="muted small">บัญชี: <b id="noAccessUser"></b> · บทบาท: <b id="noAccessRole"></b></p>
+        <a id="noAccessAdmin" class="btn hidden" href="/admin">ไปที่หน้าจัดการระบบ</a>
+      </div>
+
       <!-- ประกาศจากนิติบุคคล + ฟอร์มสร้างประกาศ (เฉพาะผู้มี announcement.manage) -->
       <div id="annCard" class="card ann-card">
         <div class="row between">
