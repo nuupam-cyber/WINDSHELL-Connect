@@ -58,8 +58,10 @@ router.post('/logout', async (req, res) => {
 // permissions ที่ส่งไปใช้แค่ซ่อน/แสดงปุ่มในหน้าเว็บ ส่วนการตรวจสิทธิ์จริงทำที่ server ทุกครั้ง
 router.get('/me', authenticate, async (req, res) => {
   // role_description: ใช้เป็นชื่อภาษาไทยของ Role ที่เพิ่มผ่านเว็บ (Role ที่มากับระบบมีชื่อไทยในหน้าเว็บอยู่แล้ว)
-  const { id, username, name, role, role_description, department_id, position } = req.user;
-  res.json({ id, username, name, role, role_description: role_description || '', department_id, position: position || '', permissions: [...req.permissions] });
+  // has_unit: บัญชีผูกกับห้องชุดไหม หน้าเว็บใช้ซ่อนฟอร์มแจ้งเรื่องของบัญชีที่ไม่มีห้อง (server ก็ปฏิเสธการแจ้งเรื่องอยู่แล้ว)
+  const { id, username, name, role, role_description, department_id, position, unit_id } = req.user;
+  res.json({ id, username, name, role, role_description: role_description || '', department_id, position: position || '',
+    has_unit: !!unit_id, permissions: [...req.permissions] });
 });
 
 // สมัครบัญชีลูกบ้าน ต้องใช้เลขที่สัญญาที่ยังไม่เคยถูกใช้สมัคร

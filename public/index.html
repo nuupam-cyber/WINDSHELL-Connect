@@ -100,11 +100,12 @@
     </header>
 
     <main class="container">
-      <div class="hello"><h1>ภาพรวมเรื่องแจ้งซ่อม</h1><span id="scopeNote" class="muted"></span></div>
-      <div id="summary" class="summary"></div>
+      <!-- ส่วนที่มี class="needs-requests" แสดงเฉพาะผู้ที่ดูเรื่องแจ้งซ่อมได้ (request.read.*) เช่น ผู้ประกาศจะเห็นแค่ประกาศ (app.js renderShell) -->
+      <div class="hello"><h1 id="pageTitle">ภาพรวมเรื่องแจ้งซ่อม</h1><span id="scopeNote" class="muted"></span></div>
+      <div id="summary" class="summary needs-requests"></div>
 
       <!-- ประกาศจากนิติบุคคล + ฟอร์มสร้างประกาศ (เฉพาะผู้มี announcement.manage) -->
-      <div class="card ann-card">
+      <div id="annCard" class="card ann-card">
         <div class="row between">
           <h2>ประกาศจากนิติบุคคล</h2>
           <span id="annCount" class="muted small"></span>
@@ -112,7 +113,7 @@
         <div id="annList" class="an-list"></div>
 
         <details class="ann-form hidden" data-perm="announcement.manage">
-          <summary>+ สร้างประกาศใหม่ <span class="role">ผู้ดูแล</span></summary>
+          <summary>+ สร้างประกาศใหม่ <span class="role">ผู้จัดการประกาศ</span></summary>
           <form id="annForm">
             <div class="grid-form">
               <select name="type">
@@ -157,7 +158,7 @@
       </div>
 
       <!-- งานที่ยังค้างอยู่: แต่ละ Role เห็นงานที่ตัวเองต้องทำต่อ -->
-      <div id="todoCard" class="card todo-card">
+      <div id="todoCard" class="card todo-card needs-requests">
         <div class="todo-head">
           <h2>งานที่ยังค้างอยู่</h2>
           <span id="todoCount" class="todo-count hidden"></span>
@@ -177,7 +178,7 @@
         <div id="chartDaily" class="daily"></div>
       </div>
 
-      <div class="work-grid">
+      <div class="work-grid needs-requests">
         <div>
       <!-- ฟอร์มแจ้งเรื่องใหม่ พร้อมแนบไฟล์ (เฉพาะผู้มี request.create) → POST /api/requests แบบ multipart/form-data -->
       <div class="card create-card" data-perm="request.create">

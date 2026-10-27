@@ -153,13 +153,25 @@ function renderShell() {
   const sub = me.position || roleName;
   $('#userRole').textContent = sub;
   $('#userRole').classList.toggle('hidden', sub === shownName);
-  $('#scopeNote').textContent = 'กำลังแสดง: ' + scope;
-  document.querySelector('.work-grid').classList.toggle('solo', !can('request.create'));
   $('#adminLink').classList.toggle('hidden', !can('user.manage'));
   document.querySelectorAll('[data-perm]').forEach((el) =>
     el.classList.toggle('hidden', !can(el.dataset.perm)));
-  if (can('request.create')) loadOptions().catch(alertErr);
-  loadRequests().catch(alertErr);
+
+  // ปรับหน้าตามขอบเขตงานของ Role (ตัดสินจากสิทธิ์ ไม่ผูกกับชื่อ Role จึงใช้กับ Role ที่เพิ่มผ่านเว็บได้ด้วย)
+  // - ไม่มีสิทธิ์ดูเรื่องแจ้งซ่อม (request.read.*) เช่น ผู้ประกาศ → ซ่อนสรุป งานค้าง รายการเรื่อง เหลือหน้าประกาศ
+  // - แจ้งเรื่องได้ต้องมีทั้ง request.create และบัญชีผูกกับห้องชุด (server ตรวจซ้ำทั้งสองข้อ)
+  const readsRequests = ['request.read.all', 'request.read.own', 'request.read.dept', 'request.read.assigned'].some(can);
+  const canCreate = can('request.create') && me.has_unit;
+  document.querySelectorAll('.needs-requests').forEach((el) => el.classList.toggle('hidden', !readsRequests));
+  document.querySelectorAll('[data-perm="request.create"]').forEach((el) => el.classList.toggle('hidden', !canCreate));
+  document.querySelector('.work-grid').classList.toggle('solo', !canCreate);
+  $('#annCard').classList.toggle('hidden', !can('announcement.read') && !can('announcement.manage'));
+  // หน้าที่หลักคือประกาศ (ไม่ได้ดูเรื่องแจ้งซ่อม) → เปิดฟอร์มสร้างประกาศไว้เลย ไม่ต้องกดขยาย
+  document.querySelector('.ann-form').open = !readsRequests && can('announcement.manage');
+  $('#pageTitle').textContent = readsRequests ? 'ภาพรวมเรื่องแจ้งซ่อม' : 'ประกาศจากนิติบุคคล';
+  $('#scopeNote').textContent = readsRequests ? 'กำลังแสดง: ' + scope : 'จัดการและติดตามประกาศถึงลูกบ้าน';
+  if (canCreate) loadOptions().catch(alertErr);
+  if (readsRequests) loadRequests().catch(alertErr);
   loadAnnouncements().catch(() => {});
   loadNotifications().catch(() => {});
   if (can('dashboard.view')) loadDashboard().catch(alertErr);
