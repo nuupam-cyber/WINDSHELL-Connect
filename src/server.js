@@ -7,8 +7,9 @@ const session = require('express-session');
 const path = require('path');
 const db = require('./db');
 const { HttpError } = require('./middleware/errorHandler');
-const { authenticate, requirePermission } = require('./middleware/auth');
+const { authenticate, invalidateUser, requirePermission } = require('./middleware/auth');
 
+const bcrypt = require('bcrypt');
 const app = express();
 
 // 1. Trust Proxy สำหรับ Render HTTPS
@@ -70,6 +71,28 @@ const loadRoute = (routePath, apiEndpoint, ...middlewares) => {
 loadRoute('./routes/auth', '/api/auth');
 
 // ต้องล็อกอินก่อน
+
+// บัญชีของฉัน: ทุกบทบาทแก้ชื่อและเปลี่ยนรหัสผ่านของตัวเองได้
+app.patch('/api/account/profile', authenticate, async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name || name.length > 100) throw new HttpError(400, 'กรุณากรอกชื่อ (ไม่เกิน 100 ตัวอักษร)');
+  await db.query('UPDATE users SET name = $1 WHERE id = $2', [name, req.user.id]);
+  invalidateUser(req.user.id);
+  res.json({ ok: true, name });
+});
+
+app.post('/api/account/password', authenticate, async (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (typeof new_password !== 'string' || new_password.length < 8) {
+    throw new HttpError(400, 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร');
+  }
+  const { rows: [u] } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+  const ok = u && typeof current_password === 'string' && await bcrypt.compare(current_password, u.password_hash);
+  if (!ok) throw new HttpError(400, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
+  if (current_password === new_password) throw new HttpError(400, 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม');
+  await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(new_password, 12), req.user.id]);
+  res.json({ ok: true });
+});
 
 // รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง ใช้แสดงผลในหน้าต่างๆ (ไม่รวมลูกบ้าน)
 app.get('/api/directory', authenticate, async (req, res) => {

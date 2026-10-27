@@ -303,3 +303,16 @@ img,svg{max-width:100%}
 /* จอใหญ่มาก */
 @media(min-width:1500px){.container{max-width:1320px}}
 .pick-more{margin-top:6px}.pick-more summary{cursor:pointer;color:var(--primary);font-size:13px;padding:4px 8px}
+
+/* ตารางผู้ใช้: หัวกลุ่ม */
+tr.ugrp td{background:#e9f1f2;color:var(--primary-d);padding:8px 10px;font-size:13.5px;border-bottom:1px solid var(--line);position:sticky;left:0}
+tr.ugrp span{font-weight:500;color:var(--muted);margin-left:6px;font-size:12.5px}
+td .small+.small{margin-left:4px}
+td:last-child .small{margin-bottom:2px}
+.me-btn{background:none;border:1px solid transparent;color:inherit;text-align:right;padding:4px 8px;border-radius:6px}
+.me-btn:hover{background:var(--tint)}
+.acc-info{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px;margin:0 0 14px;padding:10px 12px;background:#f6f8f9;border-radius:6px}
+.acc-info dt{color:var(--muted)}.acc-info dd{margin:0}
+.dlg-form fieldset{border:1px solid var(--line);border-radius:6px;margin:0 0 14px;padding:10px 12px 4px}
+.dlg-form legend{font-size:13px;font-weight:600;color:var(--primary-d);padding:0 4px}
+.dlg-form .ok-msg{color:#1e6b34;font-size:14px;margin:0 0 6px}

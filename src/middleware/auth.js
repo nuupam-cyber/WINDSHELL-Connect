@@ -57,4 +57,6 @@ function requirePermission(name) {
   };
 }
 
-module.exports = { authenticate, requirePermission };
+const invalidateUser = (id) => cache.delete(id);
+
+module.exports = { authenticate, requirePermission, invalidateUser };

@@ -92,6 +92,8 @@ function toast(msg, kind = 'info') {
 }
 const alertErr = (e) => toast(e.message, 'error');
 
+$('#meBtn').onclick = () => openAccount((name) => { if (me) { me.name = name; $('#userName').textContent = name; } });
+
 function renderShell() {
   $('#login').classList.toggle('hidden', !!me);
   $('#app').classList.toggle('hidden', !me);
@@ -353,13 +355,13 @@ function renderRows() {
       .some((v) => String(v ?? '').toLowerCase().includes(q))));
   $('#rows').innerHTML = rows.length
     ? rows.map((r) => `<tr data-id="${r.id}">
-        <td>#${r.id}</td>
-        <td>${esc(r.category)}${r.priority === 'urgent' ? '<span class="badge urgent">ด่วน</span>' : ''}</td>
-        <td>${esc(r.location)}</td>
-        <td>${esc(r.requester_name)}</td>
-        <td>${person(r.technician_name)}</td>
-        <td><span class="badge s-${r.status}">${STATUS[r.status]}</span></td>
-        <td class="muted">${fmtDate(r.created_at)}</td>
+        <td data-l="เลขที่">#${r.id}</td>
+        <td data-l="ประเภท">${esc(r.category)}${r.priority === 'urgent' ? '<span class="badge urgent">ด่วน</span>' : ''}</td>
+        <td data-l="สถานที่">${esc(r.location)}</td>
+        <td data-l="ผู้แจ้ง">${esc(r.requester_name)}</td>
+        <td data-l="ผู้รับผิดชอบ">${person(r.technician_name)}</td>
+        <td data-l="สถานะ"><span class="badge s-${r.status}">${STATUS[r.status]}</span></td>
+        <td class="muted" data-l="วันที่แจ้ง">${fmtDate(r.created_at)}</td>
       </tr>`).join('')
     : `<tr><td colspan="7" class="empty">${allRows.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายการแจ้งเรื่อง'}</td></tr>`;
 }
@@ -376,6 +378,22 @@ $('#rows').onclick = (e) => {
   const tr = e.target.closest('tr[data-id]');
   if (tr) openDetail(tr.dataset.id).catch(alertErr);
 };
+
+// ประเภทงาน -> ตำแหน่งที่รับผิดชอบ (จับคู่ด้วยคำสำคัญในชื่อประเภท / ตำแหน่ง)
+const ROLE_FOR = [['ไฟฟ้า', 'ไฟฟ้า'], ['ประปา', 'ประปา'], ['ปรับอากาศ', 'แอร์'], ['แอร์', 'แอร์'], ['ประตู', 'ประตู'], ['กุญแจ', 'ประตู'], ['ดิจิทัล', 'ดิจิทัล'], ['สัญญาณ', 'ดิจิทัล'], ['ความสะอาด', 'ความสะอาด'], ['รักษาความปลอดภัย', 'รักษาความปลอดภัย']];
+function pickerHtml(r, techs) {
+  const kw = (ROLE_FOR.find(([c]) => (r.category || '').includes(c)) || [])[1];
+  const match = kw ? techs.filter((t) => posById(t.id).includes(kw)) : [];
+  const list = match.length ? match : techs;
+  const need = match.length ? `งานนี้เป็นของ “${esc(match[0] ? posById(match[0].id) : kw)}”` : 'ยังไม่มีตำแหน่งที่ผูกกับงานประเภทนี้ — เลือกจากทุกคนในฝ่าย';
+  const item = (t, withPos) => `<label class="pick-item"><input type="radio" name="tech" value="${t.id}">
+    <span><b>${esc(t.name)}</b>${withPos ? `<small>${esc(posById(t.id)) || 'ยังไม่ระบุตำแหน่ง'}</small>` : ''}</span></label>`;
+  return `<fieldset class="pick"><legend>เลือกผู้รับผิดชอบ</legend>
+    <p class="muted small" style="margin:2px 4px 6px">${need}</p>
+    ${list.map((t) => item(t, !match.length)).join('')}
+    ${match.length && match.length < techs.length ? `<details class="pick-more"><summary>แสดงผู้อื่นในฝ่าย (${techs.length - match.length})</summary>${techs.filter((t) => !match.includes(t)).map((t) => item(t, true)).join('')}</details>` : ''}
+  </fieldset>`;
+}
 
 // ===== รายละเอียดและการดำเนินการ =====
 async function openDetail(id) {
@@ -422,9 +440,7 @@ async function openDetail(id) {
 
     ${acts.length ? `
       <div class="actions">
-        ${techs.length ? `<fieldset class="pick"><legend>เลือกผู้รับผิดชอบ (ชื่อและตำแหน่ง)</legend>${techs.map((t) => `
-          <label class="pick-item"><input type="radio" name="tech" value="${t.id}">
-            <span><b>${esc(t.name)}</b><small>${posById(t.id) ? esc(posById(t.id)) : 'ยังไม่ระบุตำแหน่ง'}</small></span></label>`).join('')}</fieldset>` : ''}
+        ${techs.length ? pickerHtml(r, techs) : ''}
         <textarea id="actNote" rows="2" placeholder="หมายเหตุ (จำเป็นเมื่อไม่อนุมัติ)"></textarea>
         ${acts.map(([a, label, kind]) =>
           `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}

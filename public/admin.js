@@ -88,6 +88,7 @@ function openTab(name) {
 }
 document.querySelectorAll('.tab').forEach((b) => (b.onclick = () => openTab(b.dataset.tab)));
 
+$('#meBtn').onclick = () => openAccount();
 $('#logoutBtn').onclick = async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.href = '/';
@@ -160,6 +161,18 @@ async function renderOverview() {
   };
 }
 
+// จัดกลุ่มผู้ใช้ตามประเภท: ผู้ดูแล > หัวหน้า > ช่าง/เจ้าหน้าที่ > ลูกบ้าน (ในกลุ่มเรียงตามฝ่ายแล้วชื่อ)
+function userGroups(users, roles) {
+  const defs = [['admin', 'ผู้ดูแลระบบ'], ['dept_head', 'หัวหน้าฝ่าย'], ['technician', 'ช่างและเจ้าหน้าที่'], ['resident', 'ลูกบ้าน']];
+  const known = new Set(defs.map((d) => d[0]));
+  const roleOf = (u) => roles.find((r) => r.id === u.role_id)?.name || '';
+  const out = defs.map(([k, label]) => ({ label, items: users.filter((u) => roleOf(u) === k) }));
+  const other = users.filter((u) => !known.has(roleOf(u)));
+  if (other.length) out.push({ label: 'อื่น ๆ', items: other });
+  out.forEach((g) => g.items.sort((x, y) => String(x.department_id ?? 99).localeCompare(String(y.department_id ?? 99)) || x.username.localeCompare(y.username)));
+  return out.filter((g) => g.items.length);
+}
+
 // ===== ผู้ใช้ =====
 async function renderUsers() {
   const [users, roles, depts] = await Promise.all([
@@ -189,7 +202,8 @@ async function renderUsers() {
     <div class="table-wrap">
       <table>
         <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>Role</th><th>ฝ่าย</th><th>สถานะ</th><th></th></tr></thead>
-        <tbody>${users.map((u) => `<tr>
+        <tbody>${userGroups(users, roles).map((g) => `<tr class="ugrp"><td colspan="7"><b>${esc(g.label)}</b> <span>${g.items.length} คน</span></td></tr>`
+          + g.items.map((u) => `<tr>
           <td>${esc(u.username)}</td>
           <td>${esc(u.name)}</td>
           <td class="muted">${esc(u.position || '—')}</td>
@@ -200,7 +214,7 @@ async function renderUsers() {
             ${u.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button>
             <button class="ghost small" data-rename="${u.id}" data-name="${esc(u.name)}" data-position="${esc(u.position || '')}">แก้ชื่อ</button>
             <button class="small warn" data-reset="${u.id}" data-name="${esc(u.username)}">ตั้งรหัสผ่านใหม่</button></td>
-        </tr>`).join('')}</tbody>
+        </tr>`).join('')).join('')}</tbody>
       </table>
     </div>`;
 
@@ -240,9 +254,14 @@ async function renderUsers() {
 
   $('#userSearch').oninput = (e) => {
     const q = e.target.value.trim().toLowerCase();
+    let head = null, shown = 0;
+    const flush = () => { if (head) head.hidden = !shown; };
     document.querySelectorAll('#content tbody tr').forEach((tr) => {
-      tr.hidden = !!q && !(tr.children[0].textContent + tr.children[1].textContent).toLowerCase().includes(q);
+      if (tr.classList.contains('ugrp')) { flush(); head = tr; shown = 0; return; }
+      tr.hidden = !!q && !(tr.children[0].textContent + tr.children[1].textContent + tr.children[2].textContent).toLowerCase().includes(q);
+      if (!tr.hidden) shown++;
     });
+    flush();
   };
 
   $('#content').onclick = async (e) => {
