@@ -1,236 +1,790 @@
-// ต้องอยู่บรรทัดแรกสุด: ทำให้ error ใน async handler ถูกส่งเข้า error handler
-// แทนที่จะทำให้ process ตาย (Express 4)
-require('express-async-errors');
+const $ = (s) => document.querySelector(s);
+const STATUS = {
+  pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ',
+  done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก',
+};
+let me = null;
+let DIR = []; // รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง
+const refOf = (r) => r.ref || `#${r.id}`;
+const posByName = (n) => DIR.find((d) => d.name === n)?.position || '';
+const posById = (id) => DIR.find((d) => Number(d.id) === Number(id))?.position || '';
+const person = (n) => (n ? esc(n) + (posByName(n) ? `<div class="muted small">${esc(posByName(n))}</div>` : '') : '—');
+const withPos = (n) => esc(n) + (posByName(n) ? ` <span class="muted">(${esc(posByName(n))})</span>` : '');
+const ROLE = {
+  admin: ['ผู้ดูแลระบบ', 'ทุกเรื่องในระบบ'],
+  dept_head: ['หัวหน้าแผนก', 'เรื่องในแผนกของคุณ'],
+  technician: ['เจ้าหน้าที่ช่าง', 'งานที่เกี่ยวกับคุณ'],
+  resident: ['ลูกบ้าน', 'เรื่องแจ้งซ่อมของคุณ'],
+};
 
-const express = require('express');
-const session = require('express-session');
-const path = require('path');
-const db = require('./db');
-const { HttpError } = require('./middleware/errorHandler');
-const { authenticate, invalidateUser, requirePermission } = require('./middleware/auth');
-
-const bcrypt = require('bcrypt');
-const app = express();
-
-// 1. Trust Proxy สำหรับ Render HTTPS
-app.set('trust proxy', 1);
-
-// 2. Middleware อ่าน Body
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// 3. Session: เก็บใน Postgres เพื่อไม่ให้ผู้ใช้ถูกเด้งออกทุกครั้งที่ server restart/deploy
-// (ต้อง npm install connect-pg-simple; ถ้ายังไม่ติดตั้งจะใช้ MemoryStore ไปก่อน)
-let store;
-try {
-  const PgStore = require('connect-pg-simple')(session);
-  store = new PgStore({ pool: db.pool, createTableIfMissing: true, disableTouch: true }); // ไม่เขียน DB ทุกคำขอ
-} catch (e) {
-  console.warn('ใช้ MemoryStore เพราะ:', e.message);
-}
-app.use(session({
-  store,
-  name: 'sid', // ให้ตรงกับ res.clearCookie('sid') ใน routes/auth.js
-  secret: process.env.SESSION_SECRET || 'default_secret_key',
-  resave: false,
-  saveUninitialized: false,
-  proxy: true,
-  cookie: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 1 วัน
+async function api(path, opts = {}) {
+  const init = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
+  if (opts.body instanceof FormData) init.body = opts.body;
+  else if (opts.body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(opts.body);
   }
-}));
+  const res = await fetch('/api' + path, init);
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && me && path !== '/auth/login') {
+    me = null; renderShell(); toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง', 'error');
+  }
+  if (!res.ok) throw new Error(data.error || data.message || 'เกิดข้อผิดพลาด');
+  return data;
+}
+const can = (p) => !!me && me.permissions.includes(p);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDate = (d) => new Date(d).toLocaleString('th-TH-u-ca-gregory', { dateStyle: 'medium', timeStyle: 'short' });
+// กล่องโต้ตอบมาตรฐาน (แทน prompt/confirm ของเบราว์เซอร์)
+// dialog({ title, intro, fields: [{name,label,value,type,required,minlength,placeholder,hint}], submit, danger })
+// คืนค่า object ของค่าที่กรอก หรือ null ถ้ายกเลิก
+function dialog({ title, intro = '', fields = [], submit = 'บันทึก', danger = false }) {
+  return new Promise((resolve) => {
+    const d = document.createElement('dialog');
+    d.className = 'dlg';
+    d.setAttribute('aria-label', title);
+    d.innerHTML = `<form class="dlg-form" novalidate>
+      <h2>${esc(title)}</h2>
+      ${intro ? `<p class="muted">${esc(intro)}</p>` : ''}
+      ${fields.map((f) => `<label>${esc(f.label)}
+        <input name="${esc(f.name)}" type="${f.type || 'text'}" value="${esc(f.value || '')}"
+          placeholder="${esc(f.placeholder || '')}" ${f.minlength ? `minlength="${f.minlength}"` : ''}
+          ${f.required ? 'required' : ''} autocomplete="off">
+        ${f.hint ? `<span class="muted small">${esc(f.hint)}</span>` : ''}</label>`).join('')}
+      <p class="error dlg-err" role="alert"></p>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" data-cancel>ยกเลิก</button>
+        <button type="submit" class="${danger ? 'danger' : ''}">${esc(submit)}</button>
+      </div>
+    </form>`;
+    document.body.appendChild(d);
+    let result = null;
+    const form = d.querySelector('form');
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(form));
+      for (const f of fields) {
+        const val = String(v[f.name] ?? '').trim();
+        if (f.required && !val) { d.querySelector('.dlg-err').textContent = `กรุณากรอก${f.label}`; return; }
+        if (f.minlength && val && val.length < f.minlength) {
+          d.querySelector('.dlg-err').textContent = `${f.label}ต้องมีอย่างน้อย ${f.minlength} ตัวอักษร`; return;
+        }
+        v[f.name] = val;
+      }
+      result = v;
+      d.close();
+    };
+    d.querySelector('[data-cancel]').onclick = () => d.close();
+    d.addEventListener('close', () => { d.remove(); resolve(result); });
+    d.showModal();
+    d.querySelector('input, button[type=submit]').focus();
+  });
+}
+const confirmBox = ({ title, message, ok = 'ยืนยัน', danger = false }) =>
+  dialog({ title, intro: message, submit: ok, danger }).then((r) => r !== null);
 
-// 4. ไฟล์ Static
-app.use(express.static(path.join(__dirname, '../public')));
+function toast(msg, kind = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+const alertErr = (e) => toast(e.message, 'error');
 
-// หน้าจัดการระบบ: ไฟล์อยู่ใน private/ (ไม่เปิดให้ทุกคน) ต้องล็อกอินและมีสิทธิ์ user.manage
-app.get('/admin',
-  (req, res, next) => (req.session.userId ? next() : res.redirect('/')),
-  authenticate,
-  requirePermission('user.manage'),
-  (req, res) => res.sendFile(path.join(__dirname, '../private/admin.html'))
-);
+$('#meBtn').onclick = () => openAccount((name) => { if (me) { me.name = name; $('#userName').textContent = name; } });
 
-// 5. Safe-Load Routes (รับ middleware เพิ่มได้)
-const loadRoute = (routePath, apiEndpoint, ...middlewares) => {
+function renderShell() {
+  $('#login').classList.toggle('hidden', !!me);
+  $('#app').classList.toggle('hidden', !me);
+  if (!me) return;
+  const shownName = me.name;
+  $('#userName').textContent = shownName;
+  const [roleName, scope] = ROLE[me.role] || [me.role, ''];
+  const sub = me.position || roleName;
+  $('#userRole').textContent = sub;
+  $('#userRole').classList.toggle('hidden', sub === shownName);
+  $('#scopeNote').textContent = 'กำลังแสดง: ' + scope;
+  document.querySelector('.work-grid').classList.toggle('solo', !can('request.create'));
+  $('#adminLink').classList.toggle('hidden', !can('user.manage'));
+  document.querySelectorAll('[data-perm]').forEach((el) =>
+    el.classList.toggle('hidden', !can(el.dataset.perm)));
+  if (can('request.create')) loadOptions().catch(alertErr);
+  loadRequests().catch(alertErr);
+  loadAnnouncements().catch(() => {});
+  loadNotifications().catch(() => {});
+  if (can('dashboard.view')) loadDashboard().catch(alertErr);
+}
+
+// ===== เข้าสู่ระบบ / สมัครสมาชิก =====
+function showLoginForm(which) {
+  $('#loginForm').classList.toggle('hidden', which !== 'login');
+  $('#registerForm').classList.toggle('hidden', which !== 'register');
+}
+$('#toRegister').onclick = (e) => { e.preventDefault(); showLoginForm('register'); };
+$('#toLogin').onclick = (e) => { e.preventDefault(); showLoginForm('login'); };
+
+$('#loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  $('#loginError').className = 'error';
   try {
-    const route = require(routePath);
-    app.use(apiEndpoint, ...middlewares, route);
-    console.log(`Loaded route: ${apiEndpoint}`);
+    await api('/auth/login', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) });
+    me = await api('/auth/me');
+    e.target.reset();
+    $('#loginError').textContent = '';
+    renderShell();
   } catch (err) {
-    console.log(`Skipped route ${apiEndpoint}: ${err.message}`);
+    $('#loginError').textContent = err.message;
   }
 };
 
-// auth.js ใส่ authenticate ให้ /me เองอยู่แล้ว (login/register ไม่ต้องล็อกอิน)
-
-// ไม่ต้องล็อกอิน
-loadRoute('./routes/auth', '/api/auth');
-
-// ต้องล็อกอินก่อน
-
-// บัญชีของฉัน: ทุกบทบาทแก้ชื่อและเปลี่ยนรหัสผ่านของตัวเองได้
-app.patch('/api/account/profile', authenticate, async (req, res) => {
-  const name = String(req.body.name || '').trim();
-  if (!name || name.length > 100) throw new HttpError(400, 'กรุณากรอกชื่อ (ไม่เกิน 100 ตัวอักษร)');
-  await db.query('UPDATE users SET name = $1 WHERE id = $2', [name, req.user.id]);
-  invalidateUser(req.user.id);
-  res.json({ ok: true, name });
-});
-
-app.post('/api/account/password', authenticate, async (req, res) => {
-  const { current_password, new_password } = req.body || {};
-  if (typeof new_password !== 'string' || new_password.length < 8) {
-    throw new HttpError(400, 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร');
+$('#registerForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const msg = $('#registerError');
+  msg.textContent = '';
+  if (f.password !== f.confirm) {
+    msg.textContent = 'รหัสผ่านทั้งสองช่องไม่ตรงกัน';
+    return;
   }
-  const { rows: [u] } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
-  const ok = u && typeof current_password === 'string' && await bcrypt.compare(current_password, u.password_hash);
-  if (!ok) throw new HttpError(400, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
-  if (current_password === new_password) throw new HttpError(400, 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม');
-  await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(new_password, 12), req.user.id]);
-  res.json({ ok: true });
-});
-
-// รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง ใช้แสดงผลในหน้าต่างๆ (ไม่รวมลูกบ้าน)
-app.get('/api/directory', authenticate, async (req, res) => {
-  const { rows } = await db.query(
-    `SELECT u.id, u.name, u.position
-     FROM users u JOIN roles r ON r.id = u.role_id
-     WHERE u.is_active AND r.name <> 'resident'
-     ORDER BY u.name`);
-  res.json(rows);
-});
-
-// ประกาศ: ยกเลิกได้เฉพาะผู้ที่สร้างประกาศนั้นเท่านั้น
-// หาคอลัมน์ผู้สร้างจากตาราง announcements อัตโนมัติ (ชื่อคอลัมน์มาจากรายการคงที่ด้านล่างเท่านั้น)
-const OWNER_COLS = ['created_by', 'author_id', 'user_id', 'created_by_user_id', 'posted_by', 'owner_id'];
-async function annOwnerColumn() {
-  const { rows } = await db.query(
-    "SELECT column_name FROM information_schema.columns WHERE table_name = 'announcements'");
-  const names = rows.map((r) => r.column_name);
-  const col = OWNER_COLS.find((c) => names.includes(c)) || null;
-  if (!col) console.error('ไม่พบคอลัมน์ผู้สร้างประกาศ คอลัมน์ที่มี:', names.join(', '));
-  return col;
-}
-// เพิ่มฟิลด์ mine ในรายการประกาศ เพื่อให้หน้าเว็บรู้ว่าอันไหนเป็นของผู้ใช้
-app.get('/api/announcements', authenticate, async (req, res, next) => {
-  const col = await annOwnerColumn();
-  const send = res.json.bind(res);
-  if (col) {
-    res.json = (body) => {
-      if (!Array.isArray(body) || !body.length) return send(body);
-      db.query(`SELECT id, ${col} AS owner FROM announcements WHERE id = ANY($1)`, [body.map((x) => x.id)])
-        .then(({ rows }) => {
-          const owners = new Map(rows.map((r) => [String(r.id), String(r.owner)]));
-          send(body.map((x) => ({ ...x, mine: owners.get(String(x.id)) === String(req.user.id) })));
-        })
-        .catch(() => send(body));
-      return res;
-    };
-  }
-  next();
-});
-app.post('/api/announcements/:id/cancel', authenticate, async (req, res, next) => {
-  const col = await annOwnerColumn();
-  if (!col) throw new HttpError(500, 'ไม่สามารถตรวจสอบผู้สร้างประกาศได้');
-  const { rows: [a] } = await db.query(`SELECT ${col} AS owner FROM announcements WHERE id = $1`, [req.params.id]);
-  if (!a) throw new HttpError(404, 'ไม่พบประกาศ');
-  if (String(a.owner) !== String(req.user.id)) {
-    throw new HttpError(403, 'ยกเลิกได้เฉพาะผู้ที่สร้างประกาศนี้เท่านั้น');
-  }
-  next();
-});
-
-// ===== เลขที่คำร้อง: รหัสอ้างอิงแบบสลิปธนาคาร (WS-XXXX-XXXX) =====
-// สร้างจากเลข id ภายในด้วย HMAC + ความลับของระบบ จึงเดาลำดับ/จำนวนคำร้องไม่ได้ และไม่ต้องแก้ฐานข้อมูล
-// (เลข id เดิมยังใช้ภายใน API เหมือนเดิม)
-const crypto = require('crypto');
-const REF_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // ตัดตัวที่สับสน I L O 0 1
-function refCode(id) {
-  const h = crypto.createHmac('sha256', process.env.REF_SECRET || process.env.SESSION_SECRET || 'default_secret_key')
-    .update(`request:${id}`).digest();
-  let out = '';
-  for (let i = 0; i < 8; i++) out += REF_CHARS[h[i] % REF_CHARS.length];
-  return `WS-${out.slice(0, 4)}-${out.slice(4)}`;
-}
-function addRefs(body) {
-  const one = (r) => {
-    if (r && typeof r === 'object' && r.id != null && r.created_at && r.category !== undefined) r.ref = refCode(r.id);
-    return r;
-  };
-  if (Array.isArray(body)) body.forEach(one);
-  else if (body && typeof body === 'object') {
-    one(body);
-    if (Array.isArray(body.items)) {
-      body.items.forEach((n) => {
-        if (n && n.requestId != null) {
-          n.ref = refCode(n.requestId);
-          if (typeof n.title === 'string') n.title = n.title.replace(`#${n.requestId} `, `${n.ref} `);
-        }
-      });
-    }
-  }
-  return body;
-}
-function withRefs(req, res, next) {
-  const json = res.json.bind(res);
-  res.json = (body) => json(addRefs(body));
-  next();
-}
-app.use('/api/requests', withRefs);
-app.use('/api/notifications', withRefs);
-
-loadRoute('./routes/requests', '/api/requests', authenticate);
-loadRoute('./routes/admin-extra', '/api/admin', authenticate); // ตั้งรหัสผ่านใหม่
-loadRoute('./routes/admin', '/api/admin', authenticate);
-loadRoute('./routes/announcements', '/api/announcements', authenticate);
-loadRoute('./routes/notifications', '/api/notifications', authenticate);
-loadRoute('./routes/attachments', '/api/attachments', authenticate);
-
-// API ที่ไม่มีอยู่ ให้ตอบ 404 เป็น JSON (ไม่ส่ง index.html)
-app.use('/api', (req, res) => {
-  res.status(404).json({ ok: false, message: 'ไม่พบ API นี้' });
-});
-
-// Fallback Route ส่งกลับไปหน้า index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
-// Global Error Handler (ต้องอยู่หลังทุก route)
-app.use((err, req, res, next) => {
-  console.error('API Error:', err);
-  const candidates = [err.status, err.statusCode, err.httpStatus];
-  const status = candidates.find((n) => Number.isInteger(n) && n >= 400 && n < 600) || 500;
-  res.status(status).json({
-    ok: false,
-    error: status === 500 ? 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' : err.message, // หน้าเว็บอ่านจาก error
-    message: status === 500 ? 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' : err.message
-  });
-});
-
-// กันไม่ให้ process ตายจาก error ที่หลุดมา (log ไว้ดูแทน)
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled Rejection:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-});
-
-// 6. Port สำหรับ Render
-const PORT = process.env.PORT || 3000;
-(async () => {
-  // เพิ่มคอลัมน์ตำแหน่งให้ตาราง users (ทำซ้ำได้ ไม่เสียหาย)
   try {
-    await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS position varchar(100)');
-  } catch (e) {
-    console.error('เพิ่มคอลัมน์ position ไม่สำเร็จ:', e.message);
+    await api('/auth/register', { method: 'POST', body: {
+      contract_no: f.contract_no.trim().toUpperCase(),
+      name: f.name.trim(),
+      username: f.username.trim(),
+      password: f.password,
+    } });
+    e.target.reset();
+    showLoginForm('login');
+    $('#loginError').className = 'success';
+    $('#loginError').textContent = 'สมัครสำเร็จ กรุณาเข้าสู่ระบบ';
+  } catch (err) {
+    msg.textContent = err.message;
   }
-  setInterval(() => db.query('SELECT 1').catch(() => {}), 4 * 60 * 1000).unref();
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
+};
+
+$('#logoutBtn').onclick = async () => {
+  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+};
+
+// ===== ตัวเลือกฟอร์มแจ้งซ่อม =====
+async function loadOptions() {
+  const o = await api('/requests/options');
+  $('#unitLabel').textContent = o.unit ? o.unit.unit_no : 'ยังไม่ได้ผูกห้อง';
+  $('#categorySel').innerHTML = '<option value="">— เลือกประเภทงาน —</option>' +
+    o.categories.map((c) =>
+      `<option value="${c.id}" data-req="${c.requires_detail}">${esc(c.name)}${c.requires_detail ? ' *' : ''}</option>`
+    ).join('');
+  $('#areaSel').innerHTML = '<option value="">— เลือกพื้นที่ส่วนกลาง —</option>' +
+    o.commonAreas.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+}
+
+$('#categorySel').onchange = () => {
+  const needed = $('#categorySel').selectedOptions[0]?.dataset.req === 'true';
+  $('#descInput').required = needed;
+  $('#descLabel').textContent = needed ? 'รายละเอียด (จำเป็น) *' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)';
+};
+
+// ปรับหน้าตาฟอร์มตามความเร่งด่วน และเตือนถ้ามีเรื่องประเภทเดียวกันที่ยังค้างอยู่
+function syncCreateForm() {
+  const f = $('#createForm');
+  const urgent = f.priority.value === 'urgent';
+  $('#priorityHint').textContent = urgent
+    ? 'เรื่องนี้จะถูกทำเครื่องหมายว่าด่วน ใช้เฉพาะเมื่อกระทบการอยู่อาศัยจริง'
+    : 'เลือก “ด่วน” เมื่อกระทบการอยู่อาศัย เช่น น้ำรั่วหรือไฟดับ';
+  const b = f.querySelector('button.send');
+  b.classList.toggle('urgent', urgent);
+  b.textContent = urgent ? 'ส่งคำขอด่วน' : 'ส่งคำขอ';
+
+  const opt = $('#categorySel').selectedOptions[0];
+  const name = opt && opt.value ? opt.textContent.replace(/\s*\*$/, '') : '';
+  const dup = name && me
+    ? allRows.filter((r) => r.category === name && OPEN_STATUS.includes(r.status) && isMine(r, 'requester_id', 'requester_name'))
+    : [];
+  const box = $('#dupNotice');
+  box.classList.toggle('hidden', !dup.length);
+  box.innerHTML = dup.length
+    ? `คุณมีเรื่อง “${esc(name)}” ที่ยังค้างอยู่ ${dup.length} เรื่อง: `
+      + dup.map((r) => `<a href="#" data-open="${r.id}">${refOf(r)} ${STATUS[r.status]}</a>`).join(', ')
+      + '<br><span class="small">ตรวจสอบก่อนส่ง เพื่อไม่ให้แจ้งซ้ำ</span>'
+    : '';
+}
+$('#createForm').addEventListener('change', syncCreateForm);
+$('#dupNotice').onclick = (e) => {
+  const a = e.target.closest('[data-open]');
+  if (!a) return;
+  e.preventDefault();
+  openDetail(a.dataset.open).catch(alertErr);
+};
+
+$('#createForm').addEventListener('change', (e) => {
+  if (e.target.name === 'location_type')
+    $('#areaWrap').classList.toggle('hidden', e.target.value !== 'common');
+});
+
+$('#createForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const msg = $('#createMsg');
+  msg.className = 'muted';
+
+  if (!f.category_id) return showMsg(msg, 'กรุณาเลือกประเภทงาน');
+  if (f.location_type === 'common' && !f.common_area_id) {
+    return showMsg(msg, 'กรุณาเลือกพื้นที่ส่วนกลาง');
+  }
+
+  const body = {
+    category_id: Number(f.category_id),
+    priority: f.priority,
+    location_type: f.location_type,
+    description: f.description || '',
+  };
+  if (f.location_type === 'common') body.common_area_id = Number(f.common_area_id);
+
+  try {
+    await api('/requests', { method: 'POST', body });
+    e.target.reset();
+    syncCreateForm();
+    $('#areaWrap').classList.add('hidden');
+    msg.className = 'success';
+    msg.textContent = 'ส่งคำขอเรียบร้อยแล้ว';
+    toast('ส่งคำขอเรียบร้อยแล้ว');
+    loadRequests().catch(alertErr);
+  } catch (err) {
+    showMsg(msg, err.message);
+  }
+};
+
+function showMsg(el, text) {
+  el.className = 'error';
+  el.textContent = text;
+}
+
+// ===== รายการแจ้งซ่อม =====
+$('#statusFilter').innerHTML = '<option value="">ทุกสถานะ</option>' +
+  Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+let allRows = [];
+$('#statusFilter').onchange = () => renderRows();
+$('#searchBox').oninput = () => renderRows();
+
+async function loadRequests() {
+  [allRows, DIR] = await Promise.all([api('/requests'), api('/directory').catch(() => [])]);
+  renderSummary();
+  renderTodo();
+  renderRows();
+  syncCreateForm();
+}
+
+// ===== งานที่ยังค้างอยู่ (แสดงบนสุด ไม่ต้องเลื่อนหา) =====
+const OPEN_STATUS = ['pending', 'assigned', 'in_progress', 'done'];
+let todoExpanded = false;
+const isMine = (r, idF, nameF) =>
+  (r[idF] !== undefined && r[idF] !== null ? Number(r[idF]) === Number(me.id) : r[nameF] === me.name);
+
+// คืนข้อความปุ่มถ้าเรื่องนี้รอให้ "คุณ" ทำ ไม่งั้นคืนค่าว่าง (ใช้กฎเดียวกับปุ่มในหน้ารายละเอียด)
+function todoAction(r) {
+  if (r.status === 'pending' && (can('request.assign') || can('request.approve'))) return 'พิจารณาเรื่อง';
+  if (r.status === 'assigned' && can('request.update_status') && isMine(r, 'technician_id', 'technician_name')) return 'เริ่มดำเนินการ';
+  if (r.status === 'in_progress' && can('request.update_status') && isMine(r, 'technician_id', 'technician_name')) return 'บันทึกว่าเสร็จ';
+  if (r.status === 'done' && can('request.close') && isMine(r, 'requester_id', 'requester_name')) return 'ตรวจรับงาน';
+  return '';
+}
+
+function waited(d) {
+  const m = Math.floor((Date.now() - new Date(d)) / 60000);
+  if (m < 60) return 'เพิ่งแจ้ง';
+  const h = Math.floor(m / 60);
+  return h < 24 ? `แจ้งมา ${h} ชั่วโมง` : `แจ้งมา ${Math.floor(h / 24)} วัน`;
+}
+
+function renderTodo() {
+  const items = allRows.filter((r) => OPEN_STATUS.includes(r.status)).map((r) => ({ r, act: todoAction(r) }));
+  // เรียง: รอคุณทำ > ด่วน > แจ้งมานานสุดก่อน
+  items.sort((a, b) => (!!b.act - !!a.act)
+    || ((b.r.priority === 'urgent') - (a.r.priority === 'urgent'))
+    || new Date(a.r.created_at) - new Date(b.r.created_at));
+  const need = items.filter((x) => x.act).length;
+
+  $('#todoCard').classList.toggle('has-need', need > 0);
+  const cnt = $('#todoCount');
+  cnt.textContent = need ? `รอคุณดำเนินการ ${need} รายการ` : items.length ? `เปิดอยู่ ${items.length} รายการ` : '';
+  cnt.classList.toggle('hidden', !cnt.textContent);
+  cnt.classList.toggle('calm', !need);
+
+  const shown = todoExpanded ? items : items.slice(0, 5);
+  $('#todoList').innerHTML = items.length
+    ? shown.map(({ r, act }) => `
+        <div class="todo ${act ? 'need' : ''} ${r.priority === 'urgent' ? 'urgent' : ''}" role="button" tabindex="0" data-open="${r.id}">
+          <div class="todo-main">
+            <div class="todo-title">${refOf(r)} ${esc(r.category)}${r.priority === 'urgent' ? '<span class="badge urgent">ด่วน</span>' : ''}</div>
+            <div class="todo-sub">${esc(r.location)}${r.requester_name && r.requester_name !== me.name ? ` · ผู้แจ้ง ${esc(r.requester_name)}` : ''} · ${waited(r.created_at)}</div>
+          </div>
+          ${act ? `<span class="todo-act">${act}</span>` : `<span class="badge s-${r.status}">${STATUS[r.status]}</span>`}
+        </div>`).join('')
+      + (items.length > 5
+        ? `<button class="ghost small" data-todo-more>${todoExpanded ? 'ย่อรายการ' : `ดูอีก ${items.length - 5} รายการ`}</button>` : '')
+    : '<p class="an-empty">ไม่มีงานค้างในขณะนี้</p>';
+}
+
+$('#todoList').onclick = (e) => {
+  if (e.target.closest('[data-todo-more]')) { todoExpanded = !todoExpanded; renderTodo(); return; }
+  const it = e.target.closest('[data-open]');
+  if (it) openDetail(it.dataset.open).catch(alertErr);
+};
+$('#todoList').onkeydown = (e) => {
+  const it = e.target.closest('[data-open]');
+  if (it && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(it.dataset.open).catch(alertErr); }
+};
+
+function renderSummary() {
+  const n = (...st) => allRows.filter((r) => st.includes(r.status)).length;
+  const cell = (v, l, c = '') => `<div class="sum ${c}"><b>${v}</b><span>${l}</span></div>`;
+  $('#summary').innerHTML =
+    cell(n('pending'), 'รอพิจารณา') +
+    cell(n('assigned', 'in_progress'), 'กำลังดำเนินการ', 'open') +
+    cell(n('done'), 'รอยืนยันปิดเรื่อง', 'wait') +
+    cell(n('closed'), 'ปิดเรื่องแล้ว', 'ok');
+}
+
+function renderRows() {
+  const s = $('#statusFilter').value;
+  const q = $('#searchBox').value.trim().toLowerCase();
+  const rows = allRows.filter((r) => (!s || r.status === s) && (!q ||
+    [refOf(r), `#${r.id}`, r.category, r.location, r.requester_name, r.technician_name]
+      .some((v) => String(v ?? '').toLowerCase().includes(q))));
+  $('#rows').innerHTML = rows.length
+    ? rows.map((r) => `<tr data-id="${r.id}">
+        <td data-l="เลขที่" class="refno">${refOf(r)}</td>
+        <td data-l="ประเภท">${esc(r.category)}${r.priority === 'urgent' ? '<span class="badge urgent">ด่วน</span>' : ''}</td>
+        <td data-l="สถานที่">${esc(r.location)}</td>
+        <td data-l="ผู้แจ้ง">${esc(r.requester_name)}</td>
+        <td data-l="ผู้รับผิดชอบ">${person(r.technician_name)}</td>
+        <td data-l="สถานะ"><span class="badge s-${r.status}">${STATUS[r.status]}</span></td>
+        <td class="muted" data-l="วันที่แจ้ง">${fmtDate(r.created_at)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="7" class="empty">${allRows.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายการแจ้งเรื่อง'}</td></tr>`;
+}
+
+const FLOW = ['pending', 'assigned', 'in_progress', 'done', 'closed'];
+function progress(st) {
+  const i = FLOW.indexOf(st);
+  if (i < 0) return `<p class="muted">${st === 'rejected' ? 'เรื่องนี้ไม่ได้รับอนุมัติ' : 'เรื่องนี้ถูกยกเลิกแล้ว'}</p>`;
+  return `<ol class="flow">${FLOW.map((k, j) =>
+    `<li class="${j < i ? 'past' : j === i ? 'now' : ''}">${STATUS[k]}</li>`).join('')}</ol>`;
+}
+
+$('#rows').onclick = (e) => {
+  const tr = e.target.closest('tr[data-id]');
+  if (tr) openDetail(tr.dataset.id).catch(alertErr);
+};
+
+// ประเภทงาน -> ตำแหน่งที่รับผิดชอบ (จับคู่ด้วยคำสำคัญในชื่อประเภท / ตำแหน่ง)
+const ROLE_FOR = [['ไฟฟ้า', 'ไฟฟ้า'], ['ประปา', 'ประปา'], ['ปรับอากาศ', 'แอร์'], ['แอร์', 'แอร์'], ['ประตู', 'ประตู'], ['กุญแจ', 'ประตู'], ['ดิจิทัล', 'ดิจิทัล'], ['สัญญาณ', 'ดิจิทัล'], ['ความสะอาด', 'ความสะอาด'], ['รักษาความปลอดภัย', 'รักษาความปลอดภัย']];
+function pickerHtml(r, techs) {
+  const kw = (ROLE_FOR.find(([c]) => (r.category || '').includes(c)) || [])[1];
+  const match = kw ? techs.filter((t) => posById(t.id).includes(kw)) : [];
+  const list = match.length ? match : techs;
+  const need = match.length ? `งานนี้เป็นของ “${esc(match[0] ? posById(match[0].id) : kw)}”` : 'ยังไม่มีตำแหน่งที่ผูกกับงานประเภทนี้ — เลือกจากทุกคนในฝ่าย';
+  const item = (t, withPos) => `<label class="pick-item"><input type="radio" name="tech" value="${t.id}">
+    <span><b>${esc(t.name)}</b>${withPos ? `<small>${esc(posById(t.id)) || 'ยังไม่ระบุตำแหน่ง'}</small>` : ''}</span></label>`;
+  return `<fieldset class="pick"><legend>เลือกผู้รับผิดชอบ</legend>
+    <p class="muted small" style="margin:2px 4px 6px">${need}</p>
+    ${list.map((t) => item(t, !match.length)).join('')}
+    ${match.length && match.length < techs.length ? `<details class="pick-more"><summary>แสดงผู้อื่นในฝ่าย (${techs.length - match.length})</summary>${techs.filter((t) => !match.includes(t)).map((t) => item(t, true)).join('')}</details>` : ''}
+  </fieldset>`;
+}
+
+// ===== รายละเอียดและการดำเนินการ =====
+async function openDetail(id) {
+  const r = await api(`/requests/${id}`);
+  const techs = can('request.assign') && r.status === 'pending' ? await api('/requests/technicians') : [];
+  if (techs.length && !DIR.length) DIR = await api('/directory').catch(() => DIR);
+  const mine = (field) => r[field] === me.id;
+
+  const acts = [];
+  if (r.status === 'pending' && can('request.assign')) acts.push(['assign', 'อนุมัติและมอบหมายผู้รับผิดชอบ', 'ok']);
+  if (r.status === 'pending' && can('request.approve')) acts.push(['reject', 'ไม่อนุมัติ', 'danger']);
+  if (r.status === 'assigned' && can('request.update_status') && mine('technician_id')) acts.push(['start', 'เริ่มดำเนินการ', 'info']);
+  if (r.status === 'in_progress' && can('request.update_status') && mine('technician_id')) acts.push(['complete', 'ดำเนินการเสร็จ', 'ok']);
+  if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', 'ok']);
+  if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'cancel']);
+
+  $('#detail').innerHTML = `
+    <h2>${esc(r.title)} <span class="refno">${refOf(r)}</span></h2>
+    <span class="badge s-${r.status}">${STATUS[r.status]}</span>
+    ${progress(r.status)}
+    <dl class="info" style="margin-top:14px">
+      <dt>ประเภท</dt><dd>${esc(r.category)} ${r.priority === 'urgent' ? '· ด่วน' : ''}</dd>
+      <dt>สถานที่</dt><dd>${esc(r.location)}</dd>
+      <dt>รายละเอียด</dt><dd>${esc(r.description) || '—'}</dd>
+      <dt>วันที่แจ้ง</dt><dd>${fmtDate(r.created_at)}</dd>
+    </dl>
+
+    <h3>ไฟล์แนบ</h3>
+    <ul class="files">${r.attachments.map((a) => `
+      <li><a href="/api/attachments/${a.id}" target="_blank">${esc(a.original_name)}</a>
+        <span class="muted">${(a.size_bytes / 1024).toFixed(0)} KB</span></li>`).join('')
+      || '<li class="muted">ยังไม่มีไฟล์</li>'}</ul>
+    ${can('attachment.upload') ? `
+      <form id="uploadForm" class="row" style="margin-top:10px">
+        <input type="file" name="file" accept=".jpg,.jpeg,.png,.pdf" required>
+        <button>อัปโหลด</button>
+      </form>` : ''}
+
+    <h3>ประวัติการดำเนินการ</h3>
+    <ul class="timeline">${r.history.map((h) => `
+      <li><b>${STATUS[h.to_status]}</b> · ${withPos(h.changed_by)} ·
+        <span class="muted">${fmtDate(h.changed_at)}</span>
+        ${h.note ? `<br>${esc(h.note)}` : ''}</li>`).join('')}</ul>
+
+    ${acts.length ? `
+      <div class="actions">
+        ${techs.length ? pickerHtml(r, techs) : ''}
+        <textarea id="actNote" rows="2" placeholder="หมายเหตุ (จำเป็นเมื่อไม่อนุมัติ)"></textarea>
+        ${acts.map(([a, label, kind]) =>
+          `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}
+      </div>` : ''}
+    <p id="detailMsg" class="error"></p>`;
+
+  $('#detail').onclick = async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const body = { note: $('#actNote')?.value.trim() || undefined };
+    if (b.dataset.act === 'assign') {
+      const t = document.querySelector('input[name=tech]:checked');
+      if (!t) { $('#detailMsg').textContent = 'กรุณาเลือกผู้รับผิดชอบก่อน'; return; }
+      body.technician_id = Number(t.value);
+    }
+    try {
+      await api(`/requests/${id}/${b.dataset.act}`, { method: 'POST', body });
+      await openDetail(id);
+      loadRequests().catch(alertErr);
+            if (can('dashboard.view')) loadDashboard().catch(() => {});
+    } catch (err) {
+      $('#detailMsg').textContent = err.message;
+    }
+  };
+
+  $('#uploadForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/requests/${id}/attachments`, { method: 'POST', body: new FormData(e.target) });
+      await openDetail(id);
+    } catch (err) {
+      $('#detailMsg').textContent = err.message;
+    }
   });
-})();
+
+    await loadComments(id);
+  $('#modal').classList.remove('hidden');
+}
+
+$('#closeModal').onclick = () => $('#modal').classList.add('hidden');
+
+// หน้าเข้าสู่ระบบ: ปล่อยให้เบราว์เซอร์เสนอชื่อผู้ใช้/รหัสผ่านที่จำไว้ได้ตามปกติ (autocomplete=username / current-password)
+
+async function init() {
+  try { me = await api('/auth/me'); } catch { me = null; }
+  renderShell();
+}
+init();
+// ไอคอนดวงตา แสดง/ซ่อนรหัสผ่าน
+const EYE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+function setPwIcon(btn, showing) {
+  btn.innerHTML = showing ? EYE_OFF_ICON : EYE_ICON;
+  btn.setAttribute('aria-label', showing ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+  btn.title = showing ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน';
+}
+
+document.querySelectorAll('.pw-toggle').forEach((b) => setPwIcon(b, false));
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.pw-toggle');
+  if (!btn) return;
+  const input = btn.parentElement.querySelector('input');
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  setPwIcon(btn, !showing);
+});
+// ===== แดชบอร์ด =====
+async function loadDashboard() {
+  const d = await api('/requests/stats');
+  const count = (s) => d.byStatus.find((x) => x.status === s)?.n ?? 0;
+  const total = d.byStatus.reduce((sum, x) => sum + x.n, 0);
+  const open = count('pending') + count('assigned') + count('in_progress');
+
+  const stat = (label, value, cls = '') =>
+    `<div class="stat ${cls}"><b>${value}</b><span>${label}</span></div>`;
+  $('#dashStats').innerHTML =
+    stat('งานทั้งหมด', total) +
+    stat('กำลังดำเนินการ', open, 'st-open') +
+    stat('รอพิจารณา', count('pending')) +
+    stat('เสร็จสิ้น/ปิดเรื่อง', count('done') + count('closed'), 'st-done') +
+    stat('ด่วนที่ยังค้าง', d.urgentOpen, 'st-urgent');
+
+  const bar = (label, n, max) => `
+    <div class="bar-row">
+      <span class="bar-label">${esc(label)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${max ? (n / max) * 100 : 0}%"></div></div>
+      <b>${n}</b>
+    </div>`;
+
+  const maxS = Math.max(1, ...d.byStatus.map((x) => x.n));
+  $('#chartStatus').innerHTML = d.byStatus.length
+    ? d.byStatus.map((x) => bar(STATUS[x.status], x.n, maxS)).join('')
+    : '<p class="muted">ยังไม่มีข้อมูล</p>';
+
+  const maxC = Math.max(1, ...d.byCategory.map((x) => x.n));
+  $('#chartCategory').innerHTML = d.byCategory.length
+    ? d.byCategory.map((x) => bar(x.name, x.n, maxC)).join('')
+    : '<p class="muted">ยังไม่มีข้อมูล</p>';
+
+  const maxD = Math.max(1, ...d.daily.map((x) => x.n));
+  $('#chartDaily').innerHTML = d.daily.map((x) => {
+    const [, m, dd] = x.day.split('-');
+    return `<div class="day">
+      <div class="day-bar" style="height:${(x.n / maxD) * 100}%"><span>${x.n}</span></div>
+      <small>${dd}/${m}</small>
+    </div>`;
+  }).join('');
+}
+
+// ===== ความคิดเห็น =====
+async function loadComments(id) {
+  const box = document.createElement('div');
+  box.id = 'commentBox';
+  box.innerHTML = `
+    <h3>ความคิดเห็น</h3>
+    <div id="commentList"></div>
+    ${can('comment.create') ? `
+      <form id="commentForm" class="row" style="margin-top:10px">
+        <input name="body" maxlength="500" placeholder="พิมพ์ความคิดเห็น" required>
+        <button>ส่ง</button>
+      </form>` : ''}`;
+  $('#detail').appendChild(box);
+
+  const render = async () => {
+    const list = await api(`/requests/${id}/comments`);
+    $('#commentList').innerHTML = list.length
+      ? list.map((c) => `
+          <div class="comment">
+            <b>${withPos(c.author)}</b> <span class="muted small">${fmtDate(c.created_at)}</span>
+            <div>${esc(c.body)}</div>
+          </div>`).join('')
+      : '<p class="muted">ยังไม่มีความคิดเห็น</p>';
+  };
+  await render();
+
+  $('#commentForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/requests/${id}/comments`, {
+        method: 'POST', body: { body: new FormData(e.target).get('body') },
+      });
+      e.target.reset();
+      await render();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
+}
+// ===== ประกาศ =====
+const ANN_ICON = { elevator: '🛗', maintenance: '🔧', water: '💧', electric: '⚡', aircon: '❄️', general: '📢' };
+const ANN_LABEL = { elevator: 'ลิฟต์', maintenance: 'บำรุงรักษา', water: 'ประปา', electric: 'ไฟฟ้า', aircon: 'เครื่องปรับอากาศ', general: 'ทั่วไป' };
+
+const ANN_WEIGHT = { elevator: 0, water: 0, electric: 0, aircon: 1, maintenance: 1, general: 2 };
+const ANN_GROUPS = [['live', 'กำลังเกิดขึ้นตอนนี้'], ['upcoming', 'กำลังจะมาถึง'], ['ended', 'สิ้นสุดแล้ว']];
+const CLOCK = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+const annDate = (d) => new Date(d).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' });
+const annTime = (d) => `${String(new Date(d).getHours()).padStart(2, '0')}:${String(new Date(d).getMinutes()).padStart(2, '0')}`;
+const dayDiff = (d) => {
+  const a = new Date(); a.setHours(0, 0, 0, 0);
+  const b = new Date(d); b.setHours(0, 0, 0, 0);
+  return Math.round((b - a) / 864e5);
+};
+
+function annInfo(a) {
+  const now = Date.now(), s = new Date(a.starts_at), e = new Date(a.ends_at);
+  const when = annDate(s) === annDate(e)
+    ? `${annDate(s)} · ${annTime(s)}–${annTime(e)} น.`
+    : `${annDate(s)} ${annTime(s)} น. – ${annDate(e)} ${annTime(e)} น.`;
+  if (now > e) return { state: 'ended', chip: 'สิ้นสุดแล้ว', cls: 'ended', when };
+  if (now >= s) return { state: 'live', chip: `กำลังเกิดขึ้น · ถึง ${annTime(e)} น.`, cls: 'live', when };
+  const n = dayDiff(s);
+  return { state: 'upcoming', when, cls: n <= 1 ? 'soon' : '',
+    chip: n === 0 ? `วันนี้ ${annTime(s)} น.` : n === 1 ? 'พรุ่งนี้' : `อีก ${n} วัน` };
+}
+
+async function loadAnnouncements() {
+  const list = (await api('/announcements')).map((a) => ({ ...a, ...annInfo(a) }));
+  // เรียง: กำลังเกิดขึ้น > กำลังจะมาถึง (ใกล้สุดก่อน) > สิ้นสุดแล้ว; เวลาเท่ากันให้เรื่องที่กระทบมากก่อน (ลิฟต์/น้ำ/ไฟ)
+  const rank = { live: 0, upcoming: 1, ended: 2 };
+  list.sort((x, y) => rank[x.state] - rank[y.state]
+    || new Date(x.starts_at) - new Date(y.starts_at)
+    || (ANN_WEIGHT[x.type] ?? 2) - (ANN_WEIGHT[y.type] ?? 2));
+
+  const card = (a) => `
+    <article class="an t-${esc(a.type)} ${a.state === 'live' ? 'an-live' : ''} ${a.state === 'ended' ? 'an-ended' : ''}">
+      <div class="an-ico" aria-hidden="true">${ANN_ICON[a.type] || '📢'}</div>
+      <div class="an-main">
+        <div class="an-top"><span class="an-type">${esc(ANN_LABEL[a.type] || a.type)}</span>
+          <span class="an-chip ${a.cls}">${esc(a.chip)}</span></div>
+        <h3 class="an-title">${esc(a.title)}</h3>
+        <div class="an-when">${CLOCK}<span>${esc(a.when)}</span></div>
+        ${a.detail ? `<p class="an-detail">${esc(a.detail)}</p>` : ''}
+        <div class="an-foot">
+          <span class="muted small">ประกาศโดย ${withPos(a.author)}</span>
+          ${can('announcement.manage') && (a.mine !== undefined ? a.mine : a.author === me.name)
+            ? `<button class="ghost small cancel" data-ann-cancel="${a.id}">ยกเลิกประกาศ</button>` : ''}
+        </div>
+      </div>
+    </article>`;
+
+  $('#annCount').textContent = list.length ? `${list.length} รายการ` : '';
+  $('#annList').innerHTML = list.length
+    ? ANN_GROUPS.map(([k, title]) => {
+        const items = list.filter((a) => a.state === k);
+        return items.length
+          ? `<h3 class="an-group ${k}">${title} <span>${items.length}</span></h3>${items.map(card).join('')}` : '';
+      }).join('')
+    : '<p class="an-empty">ขณะนี้ไม่มีประกาศจากนิติบุคคล</p>';
+}
+
+$('#annList').onclick = async (e) => {
+  const b = e.target.closest('[data-ann-cancel]');
+  if (!b || !(await confirmBox({ title: 'ยกเลิกประกาศ', message: 'ประกาศนี้จะไม่แสดงต่อผู้ใช้อีก ต้องการดำเนินการต่อหรือไม่', ok: 'ยกเลิกประกาศ', danger: true }))) return;
+  try {
+    await api(`/announcements/${b.dataset.annCancel}/cancel`, { method: 'POST' });
+    await loadAnnouncements();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+};
+
+// ===== เลือกวัน-เวลาของประกาศ (เลือกจากรายการ ไม่ต้องพิมพ์) =====
+const pad2 = (n) => String(n).padStart(2, '0');
+const TIME_OPTS = Array.from({ length: 96 }, (_, i) => `${pad2(Math.floor(i / 4))}:${pad2((i % 4) * 15)}`);
+const dStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const tStr = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const annAt = (f, k) => {
+  const d = f[`${k}_date`].value, t = f[`${k}_time`].value;
+  return d && t ? new Date(`${d}T${t}:00`) : null;
+};
+const annSet = (f, k, date) => { f[`${k}_date`].value = dStr(date); f[`${k}_time`].value = tStr(date); };
+let annDur = 60; // นาที ระหว่างเริ่มกับสิ้นสุด ใช้เลื่อนเวลาสิ้นสุดตามเวลาเริ่ม
+
+function initAnnTimes() {
+  const f = $('#annForm');
+  ['starts_time', 'ends_time'].forEach((n) => {
+    f[n].innerHTML = TIME_OPTS.map((t) => `<option value="${t}">${t} น.</option>`).join('');
+  });
+  const s = new Date();
+  s.setMinutes(Math.ceil((s.getMinutes() + 1) / 15) * 15, 0, 0);
+  annDur = 60;
+  annSet(f, 'starts', s);
+  annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
+}
+initAnnTimes();
+
+$('#annForm').addEventListener('change', (e) => {
+  const f = e.currentTarget, n = e.target.name || '';
+  const s = annAt(f, 'starts');
+  if (n.startsWith('starts_') && s) annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
+  if (n.startsWith('ends_')) {
+    const en = annAt(f, 'ends');
+    if (s && en && en > s) annDur = (en - s) / 60000;
+  }
+});
+
+$('#annForm').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-dur]');
+  if (!b) return;
+  const f = $('#annForm');
+  let s = annAt(f, 'starts') || new Date();
+  if (b.dataset.dur === 'day') {
+    s = new Date(s); s.setHours(0, 0, 0, 0);
+    annDur = 24 * 60 - 15; // 00:00 – 23:45
+    annSet(f, 'starts', s);
+  } else {
+    annDur = Number(b.dataset.dur);
+  }
+  annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
+});
+
+$('#annForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const msg = $('#annMsg');
+  msg.textContent = '';
+  const s = annAt(e.target, 'starts'), en = annAt(e.target, 'ends');
+  if (!s || !en) { msg.textContent = 'กรุณาเลือกวันและเวลาให้ครบ'; return; }
+  if (en <= s) { msg.textContent = 'เวลาสิ้นสุดต้องหลังเวลาเริ่ม'; return; }
+  try {
+    await api('/announcements', { method: 'POST', body: {
+      type: f.type,
+      title: f.title.trim(),
+      detail: f.detail.trim(),
+      starts_at: s.toISOString(),
+      ends_at: en.toISOString(),
+    } });
+    e.target.reset();
+    initAnnTimes();
+    toast('เผยแพร่ประกาศแล้ว');
+    await loadAnnouncements();
+  } catch (err) {
+    msg.textContent = err.message;
+  }
+};
+// ===== การแจ้งเตือน =====
+async function loadNotifications() {
+  const d = await api('/notifications');
+  const count = $('#bellCount');
+  count.textContent = d.unread > 9 ? '9+' : d.unread;
+  count.classList.toggle('hidden', !d.unread);
+
+  $('#notifList').innerHTML = d.items.length
+    ? d.items.map((n) => `
+        <div class="notif-item ${n.isNew ? 'new' : ''} ${n.requestId ? 'clickable' : ''}"
+             ${n.requestId ? `data-req="${n.requestId}"` : ''}>
+          <span class="notif-dot"></span>
+          <div>
+            <div class="notif-title">${esc(n.title)}</div>
+            <div class="notif-text">${esc(n.text)}</div>
+            <div class="muted small">${fmtDate(n.at)}</div>
+          </div>
+        </div>`).join('')
+    : '<p class="muted notif-empty">ยังไม่มีการแจ้งเตือน</p>';
+}
+
+$('#bellBtn').onclick = (e) => {
+  e.stopPropagation();
+  const panel = $('#notifPanel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) loadNotifications().catch(() => {});
+};
+
+// คลิกนอกกระดิ่งให้ปิดรายการ
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.notif')) $('#notifPanel').classList.add('hidden');
+});
+
+$('#notifList').onclick = (e) => {
+  const item = e.target.closest('[data-req]');
+  if (!item) return;
+  $('#notifPanel').classList.add('hidden');
+  openDetail(item.dataset.req).catch(alertErr);
+};
+
+$('#markRead').onclick = async () => {
+  await api('/notifications/read', { method: 'POST' }).catch(() => {});
+  loadNotifications().catch(() => {});
+};
+
+// ตรวจการแจ้งเตือนใหม่ทุก 60 วินาที
+setInterval(() => {
+  if (me) { loadNotifications().catch(() => {}); loadAnnouncements().catch(() => {}); loadRequests().catch(() => {}); }
+}, 60000);
