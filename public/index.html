@@ -168,21 +168,27 @@
 
       <div class="work-grid">
         <div>
-      <div class="card" data-perm="request.create">
-        <h2>แจ้งเรื่องใหม่</h2>
+      <div class="card create-card" data-perm="request.create">
+        <div class="create-head">
+          <span class="create-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+          <div>
+            <h2>แจ้งเรื่องใหม่</h2>
+            <p>กรอกข้อมูลสั้นๆ เจ้าหน้าที่จะรับเรื่องและแจ้งสถานะให้ทราบ</p>
+          </div>
+        </div>
         <form id="createForm">
-          <label>ประเภทงาน
+          <label class="fstep">ประเภทงาน
             <select name="category_id" id="categorySel" required></select>
           </label>
           <p id="dupNotice" class="notice hidden" role="status"></p>
-          <div class="label">ความเร่งด่วน
+          <div class="label fstep">ความเร่งด่วน
             <div class="seg">
               <label><input type="radio" name="priority" value="normal" checked><span>ปกติ</span></label>
               <label class="opt-urgent"><input type="radio" name="priority" value="urgent"><span>ด่วน</span></label>
             </div>
             <span id="priorityHint" class="muted small">เลือก “ด่วน” เมื่อกระทบการอยู่อาศัย เช่น น้ำรั่วหรือไฟดับ</span>
           </div>
-          <div class="label" style="margin-top:12px">สถานที่
+          <div class="label fstep">สถานที่
             <div class="seg">
               <label><input type="radio" name="location_type" value="unit" checked><span>ห้องของฉัน</span></label>
               <label><input type="radio" name="location_type" value="common"><span>พื้นที่ส่วนกลาง</span></label>
@@ -194,10 +200,10 @@
             </label>
           </div>
           <p class="muted">ห้องของคุณ: <strong id="unitLabel">—</strong></p>
-          <label><span id="descLabel">รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
+          <label class="fstep"><span id="descLabel">รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
             <textarea id="descInput" name="description" rows="3" maxlength="1000"></textarea>
           </label>
-          <label class="file-up"><span id="fileLabel">แนบรูปหรือไฟล์ (ไม่บังคับ)</span>
+          <label class="file-up fstep"><span id="fileLabel">แนบรูปหรือไฟล์ (ไม่บังคับ)</span>
             <span class="muted small">JPG, PNG หรือ PDF ไม่เกิน 5 MB ต่อไฟล์ สูงสุด 3 ไฟล์</span>
             <input type="file" id="createFiles" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple>
           </label>

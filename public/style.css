@@ -3933,3 +3933,160 @@ html[data-theme="dark"] .side-foot a,html[data-theme="dark"] .side-foot button {
 .file-up input {
   margin-top: 6px;
 }
+
+/* ช่องแนบไฟล์ในฟอร์มแจ้งเรื่อง: ไม่ล้นการ์ด ปุ่มเลือกไฟล์กลมกลืนกับธีม */
+.file-up {
+  display: block;
+  min-width: 0;
+}
+
+.file-up > .small {
+  display: block;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.file-up input[type="file"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 8px;
+  font-size: 14px;
+  color: var(--muted);
+  background: #f7fafa;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.file-up input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  background: #ffffff;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.file-up input[type="file"]:hover {
+  border-color: var(--primary);
+}
+
+/* ฟอร์มแจ้งเรื่องใหม่: เป็นจุดหลักของหน้า ลูกบ้านทำตามทีละขั้น */
+.create-card.card {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--primary);
+  box-shadow: 0 8px 24px rgba(11, 107, 111, 0.14);
+}
+
+.create-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px;
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.create-ico {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.create-card .create-head h2 {
+  margin: 0;
+  font-size: 21px;
+  color: #ffffff;
+}
+
+.create-card .create-head p {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #d3ecea;
+}
+
+.create-card form {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  counter-reset: step;
+}
+
+.create-card form > * {
+  margin: 0;
+  min-width: 0;
+}
+
+.fstep {
+  position: relative;
+  display: block;
+  padding-left: 42px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.fstep::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--tint);
+  color: var(--primary-d);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.fstep input,
+.fstep select,
+.fstep textarea,
+.fstep .muted,
+.fstep .small {
+  font-weight: 400;
+}
+
+.create-card form > p.muted {
+  margin-top: -10px;
+  padding-left: 42px;
+}
+
+.create-card button.send {
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  font-size: 17px;
+}
+
+.create-card #createMsg {
+  margin: 0;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .create-head {
+    padding: 16px 18px;
+  }
+  .create-card form {
+    padding: 18px;
+  }
+}
