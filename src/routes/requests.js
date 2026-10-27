@@ -7,7 +7,7 @@ const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
 const { upload, detectType } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
-const { parseId, canView, inScope } = require('../services/access');
+const { parseId, canView, inScope, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require('../services/access');
 
 const { withTransaction } = db;
 const router = Router();
@@ -259,10 +259,14 @@ router.get('/:id', async (req, res) => {
        FROM request_status_history h JOIN users u ON u.id = h.changed_by
        WHERE h.request_id = $1 ORDER BY h.changed_at, h.id`, [id]),
     db.query(
-      `SELECT id, original_name, mime_type, size_bytes, created_at
-       FROM attachments WHERE request_id = $1 ORDER BY id`, [id]),
+      `SELECT a.id, a.original_name, a.mime_type, a.size_bytes, a.created_at, a.uploaded_by,
+              ${STATUS_UNCHANGED_SQL} AS status_unchanged
+       FROM attachments a WHERE a.request_id = $1 ORDER BY a.id`, [id]),
   ]);
-  res.json({ ...r, history: history.rows, attachments: attachments.rows });
+  const files = attachments.rows.map(({ status_unchanged, ...f }) => ({
+    ...f, can_delete: canDeleteAttachment(req.user, req.permissions, { ...f, status_unchanged }),
+  }));
+  res.json({ ...r, history: history.rows, attachments: files });
 });
 
 function uploadFile(req, res, next) {

@@ -3,31 +3,57 @@ const db = require('../db');
 
 const router = Router();
 
-const LABEL = {
-  pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ',
-  done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก',
-};
+// แจ้งเฉพาะเหตุการณ์ที่ผู้ใช้ต้องรู้หรือต้องลงมือทำ
+// ผู้แจ้ง: ได้ผู้รับผิดชอบ / ซ่อมเสร็จรอยืนยัน / ไม่อนุมัติ
+// ผู้รับผิดชอบ: ได้รับมอบหมายงานใหม่ / ผู้แจ้งยืนยันปิดเรื่อง
+function statusText(h, me) {
+  if (h.technician_id === me && h.requester_id !== me) {
+    return h.to_status === 'assigned' ? 'คุณได้รับมอบหมายงานใหม่' : 'ผู้แจ้งยืนยันปิดเรื่องแล้ว';
+  }
+  if (h.to_status === 'assigned') return `มอบหมายให้ ${h.technician_name || 'ผู้รับผิดชอบ'} แล้ว`;
+  if (h.to_status === 'done') return 'ซ่อมเสร็จแล้ว กรุณาตรวจงานและกดยืนยันปิดเรื่อง';
+  return `ไม่อนุมัติ${h.note ? `: ${h.note}` : ''}`;
+}
 
-// การแจ้งเตือนของผู้ใช้: สถานะที่เปลี่ยนในเรื่องที่ตนเกี่ยวข้อง และประกาศที่ยังใช้งานอยู่
 router.get('/', async (req, res) => {
   const me = req.user.id;
+  const perms = req.permissions;
   const { rows: [u] } = await db.query('SELECT notif_seen_at FROM users WHERE id = $1', [me]);
   const seen = new Date(u.notif_seen_at);
 
-  const [history, notices] = await Promise.all([
+  // ผู้มีสิทธิ์มอบหมายงาน: เรื่องใหม่ที่ยังรอพิจารณาในฝ่ายของตน (หายไปเองเมื่อพิจารณาแล้ว)
+  const canAssign = perms.has('request.assign');
+  const allDept = perms.has('request.read.all');
+
+  const [history, pending, notices] = await Promise.all([
     db.query(
-      `SELECT h.changed_at AS at, h.to_status, r.id AS request_id, r.title
+      `SELECT h.changed_at AS at, h.to_status, h.note, r.id AS request_id, r.title,
+              r.requester_id, r.technician_id, t.name AS technician_name
        FROM request_status_history h
        JOIN repair_requests r ON r.id = h.request_id
-       WHERE (r.requester_id = $1 OR r.technician_id = $1) AND h.changed_by <> $1
+       LEFT JOIN users t ON t.id = r.technician_id
+       WHERE h.changed_by <> $1
+         AND ((r.requester_id = $1 AND h.to_status IN ('assigned', 'done', 'rejected'))
+           OR (r.technician_id = $1 AND h.to_status IN ('assigned', 'closed')))
        ORDER BY h.changed_at DESC
        LIMIT 20`, [me]),
-    db.query(
-      `SELECT id, title, created_at AS at
-       FROM announcements
-       WHERE is_active AND ends_at >= NOW()
-       ORDER BY created_at DESC
-       LIMIT 10`),
+    canAssign
+      ? db.query(
+        `SELECT r.id AS request_id, r.title, r.priority, r.created_at AS at
+         FROM repair_requests r
+         WHERE r.status = 'pending' AND r.requester_id <> $1
+           AND ($2::boolean OR r.department_id = $3)
+         ORDER BY r.created_at DESC
+         LIMIT 10`, [me, allDept, req.user.department_id])
+      : { rows: [] },
+    perms.has('announcement.read')
+      ? db.query(
+        `SELECT id, title, created_at AS at
+         FROM announcements
+         WHERE is_active AND ends_at >= NOW()
+         ORDER BY created_at DESC
+         LIMIT 5`)
+      : { rows: [] },
   ]);
 
   const items = [
@@ -35,14 +61,22 @@ router.get('/', async (req, res) => {
       kind: 'status',
       requestId: h.request_id,
       title: `#${h.request_id} ${h.title}`,
-      text: `สถานะเปลี่ยนเป็น ${LABEL[h.to_status]}`,
+      text: statusText(h, me),
       at: h.at,
       isNew: new Date(h.at) > seen,
+    })),
+    ...pending.rows.map((p) => ({
+      kind: 'pending',
+      requestId: p.request_id,
+      title: `#${p.request_id} ${p.title}`,
+      text: p.priority === 'urgent' ? 'เรื่องด่วนใหม่ รอพิจารณาและมอบหมาย' : 'เรื่องใหม่ รอพิจารณาและมอบหมาย',
+      at: p.at,
+      isNew: new Date(p.at) > seen,
     })),
     ...notices.rows.map((a) => ({
       kind: 'announcement',
       requestId: null,
-      title: 'ประกาศใหม่',
+      title: 'ประกาศจากนิติบุคคล',
       text: a.title,
       at: a.at,
       isNew: new Date(a.at) > seen,

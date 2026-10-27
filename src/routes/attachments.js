@@ -6,7 +6,7 @@ const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
 const { UPLOAD_DIR } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
-const { parseId, canView } = require('../services/access');
+const { parseId, canView, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require('../services/access');
 
 const router = Router();
 
@@ -14,6 +14,7 @@ const router = Router();
 async function loadAttachment(id, withData = false) {
   const { rows: [a] } = await db.query(
     `SELECT a.id, a.request_id, a.original_name, a.stored_name, a.mime_type, a.uploaded_by,
+            ${STATUS_UNCHANGED_SQL} AS status_unchanged,
             ${withData ? 'a.data,' : ''} r.requester_id, r.department_id, r.technician_id
      FROM attachments a JOIN repair_requests r ON r.id = a.request_id
      WHERE a.id = $1`,
@@ -47,16 +48,23 @@ router.get('/:id', requirePermission('attachment.read'), async (req, res) => {
     .send('ไฟล์นี้ไม่อยู่บนเซิร์ฟเวอร์แล้ว (อัปโหลดก่อนย้ายมาเก็บในฐานข้อมูล) กรุณาแนบไฟล์ใหม่');
 });
 
-router.delete('/:id', requirePermission('attachment.delete'), async (req, res) => {
+// ลบไฟล์: ต้องมี attachment.delete หรือ attachment.upload แล้วตรวจเงื่อนไขละเอียดใน canDeleteAttachment
+router.delete('/:id', async (req, res) => {
   const id = parseId(req.params.id);
+  if (!req.permissions.has('attachment.delete') && !req.permissions.has('attachment.upload')) {
+    await deny(req, 'attachment', id, 'delete: no permission');
+    throw new HttpError(403, 'ไม่มีสิทธิ์ลบไฟล์');
+  }
   const a = await loadAttachment(id);
   if (!a || !canView(req.user, req.permissions, a)) {
     if (a) await deny(req, 'attachment', id, 'delete');
     throw new HttpError(404, 'ไม่พบไฟล์');
   }
-  if (a.uploaded_by !== req.user.id && !req.permissions.has('request.read.all')) {
-    await deny(req, 'attachment', id, 'delete: not uploader');
-    throw new HttpError(403, 'ลบได้เฉพาะไฟล์ที่ตนอัปโหลด');
+  if (!canDeleteAttachment(req.user, req.permissions, a)) {
+    await deny(req, 'attachment', id, a.uploaded_by === req.user.id ? 'delete: status changed' : 'delete: not uploader');
+    throw new HttpError(403, a.uploaded_by === req.user.id
+      ? 'ลบไม่ได้ เพราะสถานะงานเปลี่ยนไปแล้วหลังแนบไฟล์นี้'
+      : 'ลบได้เฉพาะไฟล์ที่ตนอัปโหลด');
   }
 
   await db.query('DELETE FROM attachments WHERE id = $1', [id]);

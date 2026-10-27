@@ -26,4 +26,15 @@ function inScope(scope, user, perms, r) {
   }
 }
 
-module.exports = { parseId, canView, inScope };
+// SQL: ไฟล์ถูกอัปโหลดหลังการเปลี่ยนสถานะครั้งล่าสุดหรือไม่ (ใช้กับ alias a = attachments)
+const STATUS_UNCHANGED_SQL = `a.created_at >= (SELECT MAX(h.changed_at) FROM request_status_history h WHERE h.request_id = a.request_id)`;
+
+// ลบไฟล์แนบได้เมื่อ
+// - มี attachment.delete: ไฟล์ของตน หรือมีสิทธิ์ดูทั้งหมด
+// - หรือมี attachment.upload: เฉพาะไฟล์ที่ตนอัปโหลด และงานยังไม่เปลี่ยนสถานะหลังอัปโหลด (แนบผิดแล้วลบใหม่ได้)
+function canDeleteAttachment(user, perms, a) {
+  if (perms.has('attachment.delete') && (a.uploaded_by === user.id || perms.has('request.read.all'))) return true;
+  return perms.has('attachment.upload') && a.uploaded_by === user.id && a.status_unchanged === true;
+}
+
+module.exports = { parseId, canView, inScope, canDeleteAttachment, STATUS_UNCHANGED_SQL };

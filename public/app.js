@@ -452,7 +452,7 @@ async function openDetail(id) {
       <li><a href="/api/attachments/${f.id}" target="_blank" rel="noopener">${esc(f.original_name)}</a>
         <span class="muted small">${fmtSize(f.size_bytes)}</span>
         <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
-        ${can('attachment.delete') ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
+        ${f.can_delete ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
     ${can('attachment.upload') && !(r.status === 'assigned' && mine('technician_id')) ? `<label class="file-up">แนบไฟล์ (JPG, PNG หรือ PDF ไม่เกิน 5 MB)
       <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>` : ''}
 
