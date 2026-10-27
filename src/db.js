@@ -1,6 +1,14 @@
 const { Pool } = require('pg');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// ใช้การเชื่อมต่อซ้ำ + keepAlive ลดเวลา handshake กับ Neon ในแต่ละคำขอ
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 10,
+  keepAlive: true,
+  idleTimeoutMillis: 5 * 60 * 1000,
+  connectionTimeoutMillis: 15000,
+});
+pool.on('error', (e) => console.error('pg pool error:', e.message));
 
 const query = (text, params) => pool.query(text, params);
 

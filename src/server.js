@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 let store;
 try {
   const PgStore = require('connect-pg-simple')(session);
-  store = new PgStore({ pool: db.pool, createTableIfMissing: true });
+  store = new PgStore({ pool: db.pool, createTableIfMissing: true, disableTouch: true }); // ไม่เขียน DB ทุกคำขอ
 } catch (e) {
   console.warn('ใช้ MemoryStore เพราะ:', e.message);
 }
@@ -166,6 +166,7 @@ const PORT = process.env.PORT || 3000;
   } catch (e) {
     console.error('เพิ่มคอลัมน์ position ไม่สำเร็จ:', e.message);
   }
+  setInterval(() => db.query('SELECT 1').catch(() => {}), 4 * 60 * 1000).unref();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
   });
