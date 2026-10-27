@@ -68,6 +68,33 @@ const loadRoute = (routePath, apiEndpoint, ...middlewares) => {
 // auth.js ใส่ authenticate ให้ /me เองอยู่แล้ว (login/register ไม่ต้องล็อกอิน)
 
 // ไม่ต้องล็อกอิน
+loadRoute('./routes/recovery', '/api/recovery');
+
+// อีเมล: ตรวจรูปแบบ + ไม่ซ้ำ
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+async function checkEmail(raw, exceptUserId = null) {
+  const email = String(raw || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email) || email.length > 254) throw new HttpError(400, 'รูปแบบอีเมลไม่ถูกต้อง');
+  const { rows: [t] } = await db.query(
+    'SELECT 1 FROM users WHERE lower(email) = $1 AND ($2::int IS NULL OR id <> $2)', [email, exceptUserId]);
+  if (t) throw new HttpError(409, 'อีเมลนี้ถูกใช้กับบัญชีอื่นแล้ว');
+  return email;
+}
+
+// สมัครลูกบ้าน: ต้องกรอกอีเมล แล้วบันทึกต่อเมื่อสมัครสำเร็จ
+app.post('/api/auth/register', async (req, res, next) => {
+  const email = await checkEmail(req.body.email);
+  const username = String(req.body.username || '').trim();
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode < 300) {
+      db.query('UPDATE users SET email = $1 WHERE username = $2 AND email IS NULL', [email, username])
+        .catch((e) => console.error('บันทึกอีเมลไม่สำเร็จ:', e.message));
+    }
+    return json(body);
+  };
+  next();
+});
 loadRoute('./routes/auth', '/api/auth');
 
 // ต้องล็อกอินก่อน
@@ -79,6 +106,23 @@ app.patch('/api/account/profile', authenticate, async (req, res) => {
   await db.query('UPDATE users SET name = $1 WHERE id = $2', [name, req.user.id]);
   invalidateUser(req.user.id);
   res.json({ ok: true, name });
+});
+
+app.get('/api/account', authenticate, async (req, res) => {
+  const { rows: [u] } = await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]);
+  res.json({ email: u?.email || '' });
+});
+
+// เปลี่ยนอีเมล ต้องยืนยันด้วยรหัสผ่านปัจจุบัน
+app.patch('/api/account/email', authenticate, async (req, res) => {
+  const { rows: [u] } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+  const pw = req.body.current_password;
+  if (!(typeof pw === 'string' && u && await bcrypt.compare(pw, u.password_hash))) {
+    throw new HttpError(400, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
+  }
+  const email = await checkEmail(req.body.email, req.user.id);
+  await db.query('UPDATE users SET email = $1 WHERE id = $2', [email, req.user.id]);
+  res.json({ ok: true, email });
 });
 
 app.post('/api/account/password', authenticate, async (req, res) => {
@@ -228,6 +272,22 @@ const PORT = process.env.PORT || 3000;
     await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS position varchar(100)');
   } catch (e) {
     console.error('เพิ่มคอลัมน์ position ไม่สำเร็จ:', e.message);
+  }
+  // อีเมลสำหรับกู้รหัสผ่าน + ตารางรหัส OTP (ทำซ้ำได้ ไม่เสียหาย)
+  try {
+    await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email varchar(254)');
+    await db.query('CREATE UNIQUE INDEX IF NOT EXISTS users_email_uq ON users (lower(email)) WHERE email IS NOT NULL');
+    await db.query(`CREATE TABLE IF NOT EXISTS password_resets (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash text NOT NULL,
+      expires_at timestamptz NOT NULL,
+      attempts integer NOT NULL DEFAULT 0,
+      used boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT NOW()
+    )`);
+  } catch (e) {
+    console.error('สร้างโครงสร้างกู้รหัสผ่านไม่สำเร็จ:', e.message);
   }
   setInterval(() => db.query('SELECT 1').catch(() => {}), 4 * 60 * 1000).unref();
   app.listen(PORT, '0.0.0.0', () => {

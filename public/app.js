@@ -121,9 +121,43 @@ function renderShell() {
 function showLoginForm(which) {
   $('#loginForm').classList.toggle('hidden', which !== 'login');
   $('#registerForm').classList.toggle('hidden', which !== 'register');
+  $('#forgotForm').classList.toggle('hidden', which !== 'forgot');
 }
 $('#toRegister').onclick = (e) => { e.preventDefault(); showLoginForm('register'); };
 $('#toLogin').onclick = (e) => { e.preventDefault(); showLoginForm('login'); };
+
+// ลืมรหัสผ่าน (OTP ทางอีเมล)
+const forgotMsg = (t, ok) => { $('#forgotMsg').textContent = t; $('#forgotMsg').className = ok ? 'success' : 'error'; };
+$('#toForgot').onclick = (e) => {
+  e.preventDefault();
+  $('#forgotStep1').classList.remove('hidden'); $('#forgotStep2').classList.add('hidden'); forgotMsg('');
+  showLoginForm('forgot');
+};
+$('#forgotBack').onclick = (e) => { e.preventDefault(); showLoginForm('login'); };
+async function forgotRequest() {
+  const identifier = $('#forgotForm').identifier.value.trim();
+  if (!identifier) return forgotMsg('กรุณากรอกชื่อผู้ใช้หรืออีเมล');
+  try {
+    await api('/recovery/request', { method: 'POST', body: { identifier } });
+    $('#forgotStep1').classList.add('hidden'); $('#forgotStep2').classList.remove('hidden');
+    forgotMsg('ส่งคำขอแล้ว', true);
+  } catch (err) { forgotMsg(err.message); }
+}
+$('#forgotSend').onclick = forgotRequest;
+$('#forgotResend').onclick = (e) => { e.preventDefault(); forgotRequest(); };
+$('#forgotForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.new_password.value !== f.confirm.value) return forgotMsg('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน');
+  try {
+    await api('/recovery/confirm', { method: 'POST', body: {
+      identifier: f.identifier.value.trim(), code: f.code.value.trim(), new_password: f.new_password.value } });
+    f.reset();
+    showLoginForm('login');
+    $('#loginError').className = 'success';
+    $('#loginError').textContent = 'ตั้งรหัสผ่านใหม่แล้ว กรุณาเข้าสู่ระบบ';
+  } catch (err) { forgotMsg(err.message); }
+};
 
 $('#loginForm').onsubmit = async (e) => {
   e.preventDefault();
@@ -153,6 +187,7 @@ $('#registerForm').onsubmit = async (e) => {
       contract_no: f.contract_no.trim().toUpperCase(),
       name: f.name.trim(),
       username: f.username.trim(),
+      email: f.email.trim(),
       password: f.password,
     } });
     e.target.reset();

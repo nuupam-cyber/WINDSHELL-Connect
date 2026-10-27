@@ -32,6 +32,7 @@
       </label>
       <button type="submit">เข้าสู่ระบบ</button>
       <p id="loginError" class="error"></p>
+      <p class="center"><a href="#" id="toForgot">ลืมรหัสผ่าน?</a></p>
       <p class="center"><a href="#" id="toRegister">ยังไม่มีบัญชี? สมัครลูกบ้าน</a></p>
     </form>
 
@@ -40,6 +41,7 @@
       <p class="muted">กรอกเลขที่สัญญาเพื่อยืนยันว่าคุณเป็นผู้เช่าหรือเจ้าของห้อง</p>
       <label>เลขที่สัญญา<input name="contract_no" placeholder="เช่น CT-A-102" required></label>
       <label>ชื่อ-สกุล<input name="name" maxlength="100" required></label>
+      <label>อีเมล (ใช้กู้รหัสผ่านเมื่อลืม)<input name="email" type="email" maxlength="254" autocomplete="email" required></label>
       <label>ชื่อผู้ใช้ (a-z 0-9 _ .)<input name="username" pattern="[A-Za-z0-9_.]{3,50}" autocomplete="off" required></label>
       <label>รหัสผ่าน (อย่างน้อย 8 ตัว)
         <span class="pw-wrap">
@@ -56,6 +58,25 @@
       <button type="submit">สมัครสมาชิก</button>
       <p id="registerError" class="error"></p>
       <p class="center"><a href="#" id="toLogin">มีบัญชีแล้ว? เข้าสู่ระบบ</a></p>
+    </form>
+
+    <form id="forgotForm" class="card login-card hidden">
+      <h1>ลืมรหัสผ่าน</h1>
+      <div id="forgotStep1">
+        <p class="muted">กรอกชื่อผู้ใช้หรืออีเมล ระบบจะส่งรหัส 6 หลักไปยังอีเมลที่ลงทะเบียนไว้</p>
+        <label>ชื่อผู้ใช้หรืออีเมล<input name="identifier" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+        <button type="button" id="forgotSend">ส่งรหัสยืนยัน</button>
+      </div>
+      <div id="forgotStep2" class="hidden">
+        <p class="muted">ถ้าบัญชีนี้มีอีเมลที่ลงทะเบียนไว้ รหัสจะถูกส่งไปแล้ว (ใช้ได้ 10 นาที) ตรวจในกล่องจดหมายและจดหมายขยะ</p>
+        <label>รหัส 6 หลัก<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
+        <label>รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)<input name="new_password" type="password" minlength="8" autocomplete="new-password"></label>
+        <label>ยืนยันรหัสผ่านใหม่<input name="confirm" type="password" minlength="8" autocomplete="new-password"></label>
+        <button type="submit">ตั้งรหัสผ่านใหม่</button>
+        <p class="center"><a href="#" id="forgotResend">ขอรหัสใหม่</a></p>
+      </div>
+      <p id="forgotMsg" class="error"></p>
+      <p class="center"><a href="#" id="forgotBack">กลับไปเข้าสู่ระบบ</a></p>
     </form>
     </div>
     </div>

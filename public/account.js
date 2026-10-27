@@ -15,6 +15,7 @@ async function openAccount(onChanged) {
   const ROLE = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าแผนก', technician: 'เจ้าหน้าที่ช่าง', resident: 'ลูกบ้าน' };
   let u;
   try { u = await accountApi('/auth/me', 'GET'); } catch (e) { return; }
+  const acct = await accountApi('/account', 'GET').catch(() => ({ email: '' }));
 
   const d = document.createElement('dialog');
   d.className = 'dlg';
@@ -33,6 +34,14 @@ async function openAccount(onChanged) {
           <span class="muted small">ชื่อผู้ใช้และตำแหน่งแก้เองไม่ได้ ติดต่อผู้ดูแลระบบ</span></label>
         <p class="error dlg-err" data-for="name" role="alert"></p>
         <div class="dlg-actions" style="margin-top:6px;padding-top:10px"><button type="submit">บันทึกชื่อ</button></div>
+      </fieldset>
+    </form>
+    <form id="accEmail" novalidate>
+      <fieldset><legend>อีเมล (ใช้กู้รหัสผ่านเมื่อลืม)</legend>
+        <label>อีเมล<input name="email" type="email" value="${esc(acct.email)}" maxlength="254" autocomplete="email" required></label>
+        <label>รหัสผ่านปัจจุบัน (เพื่อยืนยัน)<input name="current_password" type="password" autocomplete="current-password" required></label>
+        <p class="error dlg-err" data-for="email" role="alert"></p>
+        <div class="dlg-actions" style="margin-top:6px;padding-top:10px"><button type="submit">บันทึกอีเมล</button></div>
       </fieldset>
     </form>
     <form id="accPw" novalidate>
@@ -62,6 +71,18 @@ async function openAccount(onChanged) {
       msg('name', 'บันทึกชื่อแล้ว', true);
       if (onChanged) onChanged(name);
     } catch (err) { msg('name', err.message); }
+  };
+
+  d.querySelector('#accEmail').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (!f.email.value.trim()) return msg('email', 'กรุณากรอกอีเมล');
+    if (!f.current_password.value) return msg('email', 'กรุณากรอกรหัสผ่านปัจจุบันเพื่อยืนยัน');
+    try {
+      await accountApi('/account/email', 'PATCH', { email: f.email.value.trim(), current_password: f.current_password.value });
+      f.current_password.value = '';
+      msg('email', 'บันทึกอีเมลแล้ว', true);
+    } catch (err) { msg('email', err.message); }
   };
 
   d.querySelector('#accPw').onsubmit = async (e) => {
