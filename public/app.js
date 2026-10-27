@@ -35,6 +35,8 @@ async function api(path, opts = {}) {
 const can = (p) => !!me && me.permissions.includes(p);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDay = (d) => new Date(d).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtClock = (d) => new Date(d).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
 const fmtDate = (d) => new Date(d).toLocaleString('th-TH-u-ca-gregory', { dateStyle: 'medium', timeStyle: 'short' });
 // กล่องโต้ตอบมาตรฐาน (แทน prompt/confirm ของเบราว์เซอร์)
 // dialog({ title, intro, fields: [{name,label,value,type,required,minlength,placeholder,hint}], submit, danger })
@@ -363,7 +365,7 @@ function renderRows() {
         <td data-l="ผู้แจ้ง">${esc(r.requester_name)}</td>
         <td data-l="ผู้รับผิดชอบ">${person(r.technician_name)}</td>
         <td data-l="สถานะ"><span class="badge s-${r.status}">${STATUS[r.status]}</span></td>
-        <td class="muted" data-l="วันที่แจ้ง">${fmtDate(r.created_at)}</td>
+        <td class="muted" data-l="วันที่แจ้ง">${fmtDay(r.created_at)}<div class="small">${fmtClock(r.created_at)} น.</div></td>
       </tr>`).join('')
     : `<tr><td colspan="7" class="empty">${allRows.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายการแจ้งเรื่อง'}</td></tr>`;
 }
@@ -594,7 +596,7 @@ async function loadComments(id) {
   });
 }
 // ===== ประกาศ =====
-const ANN_ICON = { elevator: '🛗', maintenance: '🔧', water: '💧', electric: '⚡', aircon: '❄️', general: '📢' };
+const ANN_ICON = { elevator: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M12 3v18M8.2 9.8L10 8l1.8 1.8M13.4 14.2L15 16l1.6-1.8"/></svg>', maintenance: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/></svg>', water: '<svg viewBox="0 0 24 24"><path d="M12 2.7l5.7 5.7a8 8 0 1 1-11.4 0z"/></svg>', electric: '<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>', aircon: '<svg viewBox="0 0 24 24"><path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M19.1 4.9L4.9 19.1"/></svg>', general: '<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15.5 8.5a5 5 0 0 1 0 7"/></svg>' };
 const ANN_LABEL = { elevator: 'ลิฟต์', maintenance: 'บำรุงรักษา', water: 'ประปา', electric: 'ไฟฟ้า', aircon: 'เครื่องปรับอากาศ', general: 'ทั่วไป' };
 
 const ANN_WEIGHT = { elevator: 0, water: 0, electric: 0, aircon: 1, maintenance: 1, general: 2 };
@@ -630,7 +632,7 @@ async function loadAnnouncements() {
 
   const card = (a) => `
     <article class="an t-${esc(a.type)} ${a.state === 'live' ? 'an-live' : ''} ${a.state === 'ended' ? 'an-ended' : ''}">
-      <div class="an-ico" aria-hidden="true">${ANN_ICON[a.type] || '📢'}</div>
+      <div class="an-ico" aria-hidden="true">${ANN_ICON[a.type] || ANN_ICON.general}</div>
       <div class="an-main">
         <div class="an-top"><span class="an-type">${esc(ANN_LABEL[a.type] || a.type)}</span>
           <span class="an-chip ${a.cls}">${esc(a.chip)}</span></div>
