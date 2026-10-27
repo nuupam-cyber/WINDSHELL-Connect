@@ -13,6 +13,54 @@ async function api(path, opts = {}) {
   return data;
 }
 const STATUS = { pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ', done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก' };
+// กล่องโต้ตอบมาตรฐาน (แทน prompt/confirm ของเบราว์เซอร์)
+// dialog({ title, intro, fields: [{name,label,value,type,required,minlength,placeholder,hint}], submit, danger })
+// คืนค่า object ของค่าที่กรอก หรือ null ถ้ายกเลิก
+function dialog({ title, intro = '', fields = [], submit = 'บันทึก', danger = false }) {
+  return new Promise((resolve) => {
+    const d = document.createElement('dialog');
+    d.className = 'dlg';
+    d.setAttribute('aria-label', title);
+    d.innerHTML = `<form class="dlg-form" novalidate>
+      <h2>${esc(title)}</h2>
+      ${intro ? `<p class="muted">${esc(intro)}</p>` : ''}
+      ${fields.map((f) => `<label>${esc(f.label)}
+        <input name="${esc(f.name)}" type="${f.type || 'text'}" value="${esc(f.value || '')}"
+          placeholder="${esc(f.placeholder || '')}" ${f.minlength ? `minlength="${f.minlength}"` : ''}
+          ${f.required ? 'required' : ''} autocomplete="off">
+        ${f.hint ? `<span class="muted small">${esc(f.hint)}</span>` : ''}</label>`).join('')}
+      <p class="error dlg-err" role="alert"></p>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" data-cancel>ยกเลิก</button>
+        <button type="submit" class="${danger ? 'danger' : ''}">${esc(submit)}</button>
+      </div>
+    </form>`;
+    document.body.appendChild(d);
+    let result = null;
+    const form = d.querySelector('form');
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(form));
+      for (const f of fields) {
+        const val = String(v[f.name] ?? '').trim();
+        if (f.required && !val) { d.querySelector('.dlg-err').textContent = `กรุณากรอก${f.label}`; return; }
+        if (f.minlength && val && val.length < f.minlength) {
+          d.querySelector('.dlg-err').textContent = `${f.label}ต้องมีอย่างน้อย ${f.minlength} ตัวอักษร`; return;
+        }
+        v[f.name] = val;
+      }
+      result = v;
+      d.close();
+    };
+    d.querySelector('[data-cancel]').onclick = () => d.close();
+    d.addEventListener('close', () => { d.remove(); resolve(result); });
+    d.showModal();
+    d.querySelector('input, button[type=submit]').focus();
+  });
+}
+const confirmBox = ({ title, message, ok = 'ยืนยัน', danger = false }) =>
+  dialog({ title, intro: message, submit: ok, danger }).then((r) => r !== null);
+
 function toast(msg, kind = 'info') {
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
@@ -188,21 +236,35 @@ async function renderUsers() {
     });
   };
 
-  $('#content').onclick = (e) => {
+  $('#content').onclick = async (e) => {
     const rn = e.target.closest('[data-rename]');
     if (rn) {
-      const name = prompt('ชื่อ-นามสกุลจริง', rn.dataset.name);
-      if (name === null || !name.trim()) return;
-      const position = prompt('ตำแหน่ง/หน้าที่ (เว้นว่างถ้าไม่ระบุ)', rn.dataset.position);
-      if (position === null) return;
-      run(() => api(`/admin/users/${rn.dataset.rename}/profile`, { method: 'PATCH', body: { name: name.trim(), position: position.trim() } }), renderUsers);
+      const v = await dialog({
+        title: 'แก้ไขข้อมูลผู้ใช้',
+        intro: `บัญชี: ${rn.closest('tr').children[0].textContent}`,
+        fields: [
+          { name: 'name', label: 'ชื่อ-นามสกุล', value: rn.dataset.name, required: true, placeholder: 'เช่น สมชาย ใจดี' },
+          { name: 'position', label: 'ตำแหน่ง/หน้าที่', value: rn.dataset.position, placeholder: 'เช่น ช่างไฟฟ้า, หัวหน้าฝ่ายอาคาร',
+            hint: 'ไม่บังคับ ใช้แสดงต่อท้ายชื่อในหน้าต่างๆ และในไฟล์ส่งออก' },
+        ],
+        submit: 'บันทึกข้อมูล',
+      });
+      if (!v) return;
+      run(() => api(`/admin/users/${rn.dataset.rename}/profile`, { method: 'PATCH', body: { name: v.name, position: v.position } })
+        .then(() => toast('บันทึกข้อมูลผู้ใช้แล้ว')), renderUsers);
       return;
     }
     const r = e.target.closest('[data-reset]');
     if (r) {
-      const pw = prompt(`ตั้งรหัสผ่านใหม่ให้ ${r.dataset.name} (อย่างน้อย 8 ตัวอักษร)`);
-      if (!pw) return;
-      run(() => api(`/admin/users/${r.dataset.reset}/password`, { method: 'POST', body: { password: pw } })
+      const v = await dialog({
+        title: 'ตั้งรหัสผ่านใหม่',
+        intro: `บัญชี: ${r.dataset.name}`,
+        fields: [{ name: 'password', label: 'รหัสผ่านใหม่', required: true, minlength: 8,
+          hint: 'อย่างน้อย 8 ตัวอักษร และแจ้งรหัสนี้ให้เจ้าของบัญชีโดยตรง' }],
+        submit: 'ตั้งรหัสผ่าน',
+      });
+      if (!v) return;
+      run(() => api(`/admin/users/${r.dataset.reset}/password`, { method: 'POST', body: { password: v.password } })
         .then(() => toast('ตั้งรหัสผ่านใหม่แล้ว')));
       return;
     }
@@ -243,9 +305,9 @@ async function renderRoles() {
     run(() => api('/admin/roles', { method: 'POST', body: formData(e.target) }), renderRoles);
   };
 
-  $('#content').onclick = (e) => {
+  $('#content').onclick = async (e) => {
     const b = e.target.closest('[data-del]');
-    if (b && confirm('ลบ Role นี้ใช่หรือไม่')) {
+    if (b && await confirmBox({ title: 'ลบบทบาท', message: 'การลบบทบาทไม่สามารถย้อนกลับได้ ต้องการดำเนินการต่อหรือไม่', ok: 'ลบบทบาท', danger: true })) {
       run(() => api(`/admin/roles/${b.dataset.del}`, { method: 'DELETE' }), renderRoles);
     }
   };
@@ -329,10 +391,13 @@ async function renderAcl() {
   $('#content').onchange = async (e) => {
     const cb = e.target;
     if (cb.type !== 'checkbox') return;
-    if (!cb.checked && cb.dataset.rname === 'admin' && LOCKOUT.includes(cb.dataset.pname)
-        && !confirm('การถอนสิทธิ์นี้ของผู้ดูแลระบบอาจทำให้คุณเข้าหน้าจัดการระบบไม่ได้อีก ต้องการถอนจริงหรือไม่')) {
-      cb.checked = true;
-      return;
+    if (!cb.checked && cb.dataset.rname === 'admin' && LOCKOUT.includes(cb.dataset.pname)) {
+      const ok = await confirmBox({
+        title: 'ยืนยันการถอนสิทธิ์',
+        message: 'การถอนสิทธิ์นี้ของผู้ดูแลระบบอาจทำให้คุณเข้าหน้าจัดการระบบไม่ได้อีก ต้องการถอนสิทธิ์หรือไม่',
+        ok: 'ถอนสิทธิ์', danger: true,
+      });
+      if (!ok) { cb.checked = true; return; }
     }
     const role_id = Number(cb.dataset.role);
     const permission_id = Number(cb.dataset.perm);
@@ -540,7 +605,7 @@ async function renderProperty() {
     run(() => api('/admin/property/common-areas', { method: 'POST', body: { name: f.name.trim() } }), renderProperty);
   };
 
-  $('#content').onclick = (e) => {
+  $('#content').onclick = async (e) => {
     const toggle = e.target.closest('[data-ct-toggle]');
     const unlink = e.target.closest('[data-ct-unlink]');
     const area = e.target.closest('[data-area-toggle]');
@@ -550,7 +615,7 @@ async function renderProperty() {
         method: 'PATCH', body: { is_active: toggle.dataset.active !== 'true' },
       }), renderProperty);
     } else if (unlink) {
-      if (confirm('ถอนผู้สมัครจากสัญญานี้ ผู้ใช้เดิมจะถูกปิดการใช้งาน ยืนยันหรือไม่')) {
+      if (await confirmBox({ title: 'ถอนผู้สมัครจากสัญญา', message: 'ผู้ใช้เดิมที่ผูกกับสัญญานี้จะถูกปิดการใช้งาน ต้องการดำเนินการต่อหรือไม่', ok: 'ถอนผู้สมัคร', danger: true })) {
         run(() => api(`/admin/property/contracts/${unlink.dataset.ctUnlink}`, {
           method: 'PATCH', body: { unlink: true },
         }), renderProperty);

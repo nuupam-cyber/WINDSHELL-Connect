@@ -35,6 +35,54 @@ const can = (p) => !!me && me.permissions.includes(p);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = (d) => new Date(d).toLocaleString('th-TH-u-ca-gregory', { dateStyle: 'medium', timeStyle: 'short' });
+// กล่องโต้ตอบมาตรฐาน (แทน prompt/confirm ของเบราว์เซอร์)
+// dialog({ title, intro, fields: [{name,label,value,type,required,minlength,placeholder,hint}], submit, danger })
+// คืนค่า object ของค่าที่กรอก หรือ null ถ้ายกเลิก
+function dialog({ title, intro = '', fields = [], submit = 'บันทึก', danger = false }) {
+  return new Promise((resolve) => {
+    const d = document.createElement('dialog');
+    d.className = 'dlg';
+    d.setAttribute('aria-label', title);
+    d.innerHTML = `<form class="dlg-form" novalidate>
+      <h2>${esc(title)}</h2>
+      ${intro ? `<p class="muted">${esc(intro)}</p>` : ''}
+      ${fields.map((f) => `<label>${esc(f.label)}
+        <input name="${esc(f.name)}" type="${f.type || 'text'}" value="${esc(f.value || '')}"
+          placeholder="${esc(f.placeholder || '')}" ${f.minlength ? `minlength="${f.minlength}"` : ''}
+          ${f.required ? 'required' : ''} autocomplete="off">
+        ${f.hint ? `<span class="muted small">${esc(f.hint)}</span>` : ''}</label>`).join('')}
+      <p class="error dlg-err" role="alert"></p>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" data-cancel>ยกเลิก</button>
+        <button type="submit" class="${danger ? 'danger' : ''}">${esc(submit)}</button>
+      </div>
+    </form>`;
+    document.body.appendChild(d);
+    let result = null;
+    const form = d.querySelector('form');
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(form));
+      for (const f of fields) {
+        const val = String(v[f.name] ?? '').trim();
+        if (f.required && !val) { d.querySelector('.dlg-err').textContent = `กรุณากรอก${f.label}`; return; }
+        if (f.minlength && val && val.length < f.minlength) {
+          d.querySelector('.dlg-err').textContent = `${f.label}ต้องมีอย่างน้อย ${f.minlength} ตัวอักษร`; return;
+        }
+        v[f.name] = val;
+      }
+      result = v;
+      d.close();
+    };
+    d.querySelector('[data-cancel]').onclick = () => d.close();
+    d.addEventListener('close', () => { d.remove(); resolve(result); });
+    d.showModal();
+    d.querySelector('input, button[type=submit]').focus();
+  });
+}
+const confirmBox = ({ title, message, ok = 'ยืนยัน', danger = false }) =>
+  dialog({ title, intro: message, submit: ok, danger }).then((r) => r !== null);
+
 function toast(msg, kind = 'info') {
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
@@ -452,7 +500,7 @@ async function loadAnnouncements() {
 
 $('#annList').onclick = async (e) => {
   const b = e.target.closest('[data-ann-cancel]');
-  if (!b || !confirm('ยกเลิกประกาศนี้ใช่หรือไม่')) return;
+  if (!b || !(await confirmBox({ title: 'ยกเลิกประกาศ', message: 'ประกาศนี้จะไม่แสดงต่อผู้ใช้อีก ต้องการดำเนินการต่อหรือไม่', ok: 'ยกเลิกประกาศ', danger: true }))) return;
   try {
     await api(`/announcements/${b.dataset.annCancel}/cancel`, { method: 'POST' });
     await loadAnnouncements();

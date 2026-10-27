@@ -181,3 +181,11 @@ body.admin{background:#f2f4f5}
 .matrix .grp td{background:#e9f1f2;color:var(--primary-d);font-weight:600;font-size:13px;text-align:left;padding:7px 10px}
 .matrix tbody tr:not(.grp):hover{background:#f6fafa}
 .matrix input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--primary);cursor:pointer}
+
+/* กล่องโต้ตอบ (แทน prompt/confirm) */
+dialog.dlg{border:0;border-radius:8px;padding:0;width:min(440px,calc(100vw - 32px));color:var(--ink);box-shadow:0 12px 40px rgba(15,28,36,.3)}
+dialog.dlg::backdrop{background:rgba(15,28,36,.5)}
+.dlg-form{padding:22px 24px}.dlg-form h2{margin:0 0 4px;font-size:18px}.dlg-form>.muted{margin:0 0 16px}
+.dlg-form label{margin-bottom:14px}.dlg-form label .muted{display:block;margin-top:4px}
+.dlg-err:empty{display:none}.dlg-err{margin:0 0 8px}
+.dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
