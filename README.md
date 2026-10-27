@@ -9,7 +9,7 @@ Node.js + Express + PostgreSQL · Session (เก็บใน PostgreSQL) · RBA
 4. `npm start` แล้วเปิด http://localhost:3000 (หน้า Admin: `/admin`)
 
 บน Render: ตั้ง Environment `DATABASE_URL`, `SESSION_SECRET`, `NODE_ENV=production`
-(ถ้าไม่ตั้ง `SESSION_SECRET` ใน production ระบบจะไม่เริ่มทำงาน) และต่อ Persistent Disk ที่ `UPLOAD_DIR` ถ้าต้องการให้ไฟล์แนบอยู่หลัง deploy ใหม่
+(ถ้าไม่ตั้ง `SESSION_SECRET` ใน production ระบบจะไม่เริ่มทำงาน) (ไฟล์แนบเก็บในฐานข้อมูล ตาราง `attachments` คอลัมน์ `data` จึงไม่หายหลัง deploy)
 
 ## บัญชีทดสอบ (รหัสผ่านตาม `SEED_PASSWORD`; ถ้าไม่ตั้ง `db:setup` ใช้ค่าทดสอบสำหรับเครื่องพัฒนา ให้เปลี่ยนก่อนใช้งานจริง)
 | Role | username |

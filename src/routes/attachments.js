@@ -10,9 +10,11 @@ const { parseId, canView } = require('../services/access');
 
 const router = Router();
 
-async function loadAttachment(id) {
+// withData: ดึงเนื้อไฟล์มาด้วย (ใช้ตอนเปิดดูเท่านั้น)
+async function loadAttachment(id, withData = false) {
   const { rows: [a] } = await db.query(
-    `SELECT a.*, r.requester_id, r.department_id, r.technician_id
+    `SELECT a.id, a.request_id, a.original_name, a.stored_name, a.mime_type, a.uploaded_by,
+            ${withData ? 'a.data,' : ''} r.requester_id, r.department_id, r.technician_id
      FROM attachments a JOIN repair_requests r ON r.id = a.request_id
      WHERE a.id = $1`,
     [id]
@@ -23,7 +25,7 @@ async function loadAttachment(id) {
 // เปิดดูหรือดาวน์โหลด ผ่าน Route ที่ตรวจสิทธิ์ ไม่เปิด static folder
 router.get('/:id', requirePermission('attachment.read'), async (req, res) => {
   const id = parseId(req.params.id);
-  const a = await loadAttachment(id);
+  const a = await loadAttachment(id, true);
   if (!a || !canView(req.user, req.permissions, a)) {
     if (a) await deny(req, 'attachment', id, 'view');
     throw new HttpError(404, 'ไม่พบไฟล์');
@@ -35,7 +37,14 @@ router.get('/:id', requirePermission('attachment.read'), async (req, res) => {
   res.setHeader('Content-Type', a.mime_type);
   res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodeURIComponent(a.original_name)}`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.sendFile(path.join(UPLOAD_DIR, a.stored_name));
+  if (a.data) return res.send(a.data);
+
+  // ไฟล์เก่าที่เคยเก็บบนดิสก์ อาจหายไปแล้วหลัง deploy
+  const file = path.join(UPLOAD_DIR, a.stored_name);
+  if (fs.existsSync(file)) return res.sendFile(file);
+  res.removeHeader('Content-Disposition');
+  res.status(404).type('text/plain; charset=utf-8')
+    .send('ไฟล์นี้ไม่อยู่บนเซิร์ฟเวอร์แล้ว (อัปโหลดก่อนย้ายมาเก็บในฐานข้อมูล) กรุณาแนบไฟล์ใหม่');
 });
 
 router.delete('/:id', requirePermission('attachment.delete'), async (req, res) => {

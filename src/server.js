@@ -255,6 +255,12 @@ const PORT = process.env.PORT || 3000;
   } catch (e) {
     console.error('เพิ่มคอลัมน์ position ไม่สำเร็จ:', e.message);
   }
+  // เก็บเนื้อไฟล์แนบในฐานข้อมูล เพราะดิสก์ของ Render ถูกล้างทุกครั้งที่ deploy
+  try {
+    await db.query('ALTER TABLE attachments ADD COLUMN IF NOT EXISTS data bytea');
+  } catch (e) {
+    console.error('เพิ่มคอลัมน์ data ไม่สำเร็จ:', e.message);
+  }
   setInterval(() => db.query('SELECT 1').catch(() => {}), 4 * 60 * 1000).unref();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);

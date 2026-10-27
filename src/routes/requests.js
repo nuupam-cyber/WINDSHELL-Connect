@@ -1,12 +1,11 @@
 const crypto = require('crypto');
-const fs = require('fs');
 const path = require('path');
 const { Router } = require('express');
 const multer = require('multer');
 const db = require('../db');
 const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
-const { upload, detectType, UPLOAD_DIR } = require('../middleware/upload');
+const { upload, detectType } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId, canView, inScope } = require('../services/access');
 
@@ -165,10 +164,7 @@ router.post('/', requirePermission('request.create'), parseCreateUpload, async (
     placeLabel = area.name;
   }
 
-  const written = [];
-  let created;
-  try {
-  created = await withTransaction(async (client) => {
+  const created = await withTransaction(async (client) => {
     const { rows: [r] } = await client.query(
       `INSERT INTO repair_requests
          (category_id, unit_id, common_area_id, priority, title, description, requester_id, department_id)
@@ -182,22 +178,15 @@ router.post('/', requirePermission('request.create'), parseCreateUpload, async (
       [r.id, user.id]
     );
     for (const { file, type } of typed) {
-      const storedName = `${crypto.randomUUID()}${type.ext}`;
-      await fs.promises.writeFile(path.join(UPLOAD_DIR, storedName), file.buffer, { flag: 'wx' });
-      written.push(storedName);
+      // เก็บเนื้อไฟล์ในฐานข้อมูล ดิสก์ของ Render ถูกล้างทุกครั้งที่ deploy
       await client.query(
-        `INSERT INTO attachments (request_id, original_name, stored_name, mime_type, size_bytes, uploaded_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [r.id, path.basename(file.originalname).slice(0, 255), storedName, type.mime, file.size, user.id]
+        `INSERT INTO attachments (request_id, original_name, stored_name, mime_type, size_bytes, uploaded_by, data)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [r.id, path.basename(file.originalname).slice(0, 255), `${crypto.randomUUID()}${type.ext}`, type.mime, file.size, user.id, file.buffer]
       );
     }
     return r;
   });
-  } catch (err) {
-    // สร้างไม่สำเร็จ: ลบไฟล์ที่เขียนไปแล้ว ไม่ให้ค้างบนดิสก์
-    await Promise.all(written.map((n) => fs.promises.unlink(path.join(UPLOAD_DIR, n)).catch(() => {})));
-    throw err;
-  }
   if (typed.length) {
     await audit(req, { eventType: 'attachment_upload', resourceType: 'repair_request', resourceId: created.id, result: 'success', detail: `${typed.length} file(s) at create` });
   }
@@ -336,14 +325,13 @@ router.post('/:id/attachments', requirePermission('attachment.upload'), uploadFi
   }
 
   const storedName = `${crypto.randomUUID()}${type.ext}`;
-  await fs.promises.writeFile(path.join(UPLOAD_DIR, storedName), req.file.buffer, { flag: 'wx' });
   const originalName = path.basename(req.file.originalname).slice(0, 255);
 
   const { rows: [a] } = await db.query(
-    `INSERT INTO attachments (request_id, original_name, stored_name, mime_type, size_bytes, uploaded_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO attachments (request_id, original_name, stored_name, mime_type, size_bytes, uploaded_by, data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, original_name, mime_type, size_bytes, created_at`,
-    [id, originalName, storedName, type.mime, req.file.size, req.user.id]
+    [id, originalName, storedName, type.mime, req.file.size, req.user.id, req.file.buffer]
   );
   await audit(req, {
     eventType: 'attachment_upload', resourceType: 'attachment', resourceId: a.id,

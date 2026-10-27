@@ -109,7 +109,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   mime_type     VARCHAR(50) NOT NULL,
   size_bytes    INT NOT NULL CHECK (size_bytes > 0),
   uploaded_by   INT NOT NULL REFERENCES users(id),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  data          BYTEA
 );
 
 CREATE TABLE IF NOT EXISTS logs (
