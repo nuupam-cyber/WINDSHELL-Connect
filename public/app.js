@@ -238,7 +238,32 @@ function syncPhotoRule() {
   $('#fileLabel').textContent = need ? 'แนบรูปหรือไฟล์ (จำเป็น) *' : 'แนบรูปหรือไฟล์ (ไม่บังคับ)';
 }
 
-// ===== ไฟล์แนบในฟอร์มแจ้งเรื่อง: เลือกเพิ่มทีละครั้ง ลบไฟล์ที่เลือกผิดออกแล้วเลือกใหม่ได้ก่อนกดส่ง =====
+// shrinkImage: ย่อรูปในเบราว์เซอร์ก่อนส่ง ด้านยาวสุดไม่เกิน 1600 px แล้วบันทึกเป็น JPEG คุณภาพ 0.82
+// รูปจากกล้องมือถือ 4–12 MB มักเหลือราว 200–600 KB อัปโหลดเร็วขึ้นและไม่เกิน 5 MB
+// ไม่ใช่รูป (PDF) หรือรูปเล็กอยู่แล้ว หรือย่อแล้วไม่เล็กลง → คืนไฟล์เดิม
+// การตรวจนี้ช่วยผู้ใช้เท่านั้น server ยังตรวจขนาดและชนิดไฟล์ซ้ำเสมอ
+const SHRINK_MAX_SIDE = 1600;
+async function shrinkImage(file) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type) || file.size < 500 * 1024) return file;
+  try {
+    const img = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, SHRINK_MAX_SIDE / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; // PNG พื้นใสให้เป็นพื้นขาว (JPEG ไม่มีพื้นใส)
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((ok) => canvas.toBlob(ok, 'image/jpeg', 0.82));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return file; // เบราว์เซอร์อ่านรูปนี้ไม่ได้ ส่งไฟล์เดิมให้ server ตรวจ
+  }
+}
+
+// ===== ไฟล์แนบในฟอร์มแจ้งเรื่อง: เลือกเพิ่มทีละครั้งหรือถ่ายรูป ลบไฟล์ที่เลือกผิดออกแล้วเลือกใหม่ได้ก่อนกดส่ง =====
 const MAX_FILES = 3;
 const MAX_SIZE = 5 * 1024 * 1024;
 let picked = []; // ไฟล์ที่เลือกไว้ (ยังไม่ได้ส่ง)
@@ -252,23 +277,30 @@ function renderPicked() {
     </li>`).join('');
   const left = MAX_FILES - picked.length;
   $('#pickBtn').disabled = left === 0;
+  $('#cameraBtn').disabled = left === 0;
   $('#pickBtn').textContent = left === 0 ? 'แนบครบ 3 ไฟล์แล้ว' : picked.length ? `+ เลือกไฟล์เพิ่ม (อีก ${left})` : '+ เลือกไฟล์';
 }
 
 $('#pickBtn').onclick = () => $('#createFiles').click();
+$('#cameraBtn').onclick = () => $('#createCamera').click();
 
 // ตรวจขนาดและจำนวนทันทีที่เลือก (server ตรวจซ้ำอีกครั้งตอนส่ง รวมถึงชนิดไฟล์จากเนื้อไฟล์)
-$('#createFiles').onchange = (e) => {
+// รูปถูกย่อด้วย shrinkImage ก่อน จึงตรวจขนาดหลังย่อ ส่วน PDF ย่อไม่ได้ ต้องไม่เกิน 5 MB เอง
+async function addPicked(e) {
   const msg = $('#createMsg');
   msg.textContent = '';
-  for (const f of e.target.files) {
-    if (f.size > MAX_SIZE) { showMsg(msg, `${f.name} ใหญ่เกิน 5 MB`); continue; }
+  const input = e.target;
+  for (const original of input.files) {
     if (picked.length >= MAX_FILES) { showMsg(msg, 'แนบได้สูงสุด 3 ไฟล์'); break; }
+    const f = await shrinkImage(original);
+    if (f.size > MAX_SIZE) { showMsg(msg, `${f.name} ใหญ่เกิน 5 MB`); continue; }
     if (!picked.some((p) => p.name === f.name && p.size === f.size)) picked.push(f);
   }
-  e.target.value = ''; // ล้างช่อง ให้เลือกไฟล์ชื่อเดิมซ้ำได้หลังลบ
+  input.value = ''; // ล้างช่อง ให้เลือกไฟล์ชื่อเดิมซ้ำได้หลังลบ
   renderPicked();
-};
+}
+$('#createFiles').onchange = addPicked;
+$('#createCamera').onchange = addPicked;
 
 $('#pickedFiles').onclick = (e) => {
   const b = e.target.closest('[data-unpick]');
@@ -569,7 +601,8 @@ async function openDetail(id) {
         <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
         ${f.can_delete ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
     ${canUpload ? `<label class="file-up">แนบรูปผลงาน (JPG, PNG หรือ PDF ไม่เกิน 5 MB)${r.needs_photo ? ' <b>จำเป็นก่อนกดดำเนินการเสร็จ</b>' : ''}
-      <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>` : ''}
+      <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>
+      <label class="ghost small cam-btn">📷 ถ่ายรูปผลงาน<input type="file" id="camIn" class="hidden" accept="image/*" capture="environment"></label>` : ''}
 
     <h3>ประวัติการดำเนินการ</h3>
     <ul class="timeline">${r.history.map((h) => `
@@ -589,12 +622,12 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
       </div>` : ''}
     <p id="detailMsg" class="error"></p>`;
 
-  // เลือกไฟล์แล้วอัปโหลดทันที (POST /api/requests/:id/attachments) แล้วเปิดหน้ารายละเอียดใหม่ให้เห็นไฟล์
-  const fileIn = $('#fileIn');
-  if (fileIn) fileIn.onchange = async () => {
-    const f = fileIn.files[0];
-    if (!f) return;
-    if (f.size > 5 * 1024 * 1024) { $('#detailMsg').textContent = 'ไฟล์ใหญ่เกิน 5 MB'; fileIn.value = ''; return; }
+  // เลือกไฟล์หรือถ่ายรูปแล้วอัปโหลดทันที (POST /api/requests/:id/attachments) แล้วเปิดหน้ารายละเอียดใหม่ให้เห็นไฟล์
+  // รูปถูกย่อด้วย shrinkImage ก่อนส่ง
+  const uploadOne = async (input) => {
+    if (!input.files[0]) return;
+    const f = await shrinkImage(input.files[0]);
+    if (f.size > MAX_SIZE) { $('#detailMsg').textContent = 'ไฟล์ใหญ่เกิน 5 MB'; input.value = ''; return; }
     const fd = new FormData();
     fd.append('file', f);
     try {
@@ -603,9 +636,10 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
       await openDetail(id);
     } catch (err) {
       $('#detailMsg').textContent = err.message;
-      fileIn.value = '';
+      input.value = '';
     }
   };
+  for (const input of [$('#fileIn'), $('#camIn')]) if (input) input.onchange = () => uploadOne(input);
 
   // ตัวจัดการคลิกทั้งหน้ารายละเอียด: ดูรูปแบบป๊อปอัป, ปุ่มลบไฟล์, ลบเรื่อง, และปุ่มเปลี่ยนสถานะ (data-act)
   $('#detail').onclick = async (e) => {

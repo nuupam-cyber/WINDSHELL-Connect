@@ -4041,7 +4041,7 @@ html[data-theme="dark"] .side-foot a,html[data-theme="dark"] .side-foot button {
   font-size: 12px;
 }
 
-#pickBtn {
+#pickBtn,#cameraBtn {
   margin-top: 6px;
 }
 
@@ -4075,4 +4075,26 @@ dialog.img-view {
   max-height: 70vh;
   margin: 0 auto 8px;
   border-radius: 6px;
+}
+
+/* ปุ่ม "เลือกไฟล์" กับ "ถ่ายรูป" ในฟอร์มแจ้งเรื่อง วางเรียงกัน */
+.pick-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ปุ่มถ่ายรูปผลงานในหน้ารายละเอียด (label ห่อช่องไฟล์ที่ซ่อนไว้ กดแล้วเปิดกล้อง) */
+.cam-btn {
+  display: inline-block;
+  margin: -4px 0 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cam-btn:hover {
+  background: var(--tint);
 }

@@ -215,12 +215,17 @@
           <label class="fstep"><span id="descLabel">รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
             <textarea id="descInput" name="description" rows="3" maxlength="1000"></textarea>
           </label>
-          <!-- แนบไฟล์: ช่องเลือกไฟล์ถูกซ่อน ใช้ปุ่ม "เลือกไฟล์" แทน ไฟล์ที่เลือกแสดงเป็นรายการ ลบทีละไฟล์แล้วเลือกใหม่ได้ (app.js) -->
+          <!-- แนบไฟล์: ช่องเลือกไฟล์ถูกซ่อน ใช้ปุ่ม "เลือกไฟล์" / "ถ่ายรูป" แทน ไฟล์ที่เลือกแสดงเป็นรายการ ลบทีละไฟล์แล้วเลือกใหม่ได้ (app.js)
+               รูปถูกย่อขนาดในเบราว์เซอร์ก่อนส่ง (shrinkImage) capture="environment" = เปิดกล้องหลังบนมือถือ -->
           <div class="file-up fstep"><span id="fileLabel">แนบรูปหรือไฟล์ (ไม่บังคับ)</span>
-            <span class="muted small">JPG, PNG หรือ PDF ไม่เกิน 5 MB ต่อไฟล์ สูงสุด 3 ไฟล์</span>
+            <span class="muted small">JPG, PNG หรือ PDF ไม่เกิน 5 MB ต่อไฟล์ สูงสุด 3 ไฟล์ · รูปจะถูกย่อขนาดให้อัตโนมัติ</span>
             <input type="file" id="createFiles" class="hidden" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple>
+            <input type="file" id="createCamera" class="hidden" accept="image/*" capture="environment">
             <ul id="pickedFiles" class="picked"></ul>
-            <button type="button" id="pickBtn" class="ghost small">+ เลือกไฟล์</button>
+            <div class="pick-btns">
+              <button type="button" id="pickBtn" class="ghost small">+ เลือกไฟล์</button>
+              <button type="button" id="cameraBtn" class="ghost small">📷 ถ่ายรูป</button>
+            </div>
           </div>
           <button type="submit" class="send">ส่งคำขอ</button>
           <p id="createMsg" class="muted"></p>
