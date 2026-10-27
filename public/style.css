@@ -481,3 +481,22 @@ td select{min-width:130px}
 #rows td:nth-child(2){min-width:130px}
 #rows td:nth-child(7){font-size:15px}
 .refno{font-family:inherit;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+
+/* หน้ารายละเอียดเรื่อง (กล่องเด้ง): ไม่ให้ล้นจอ โดยเฉพาะมือถือ */
+.modal-box{overflow-x:hidden}
+#detail,#detail>*,.modal-box .card{min-width:0}
+#detail dd,#detail li,#detail h2,.comment,.timeline li{overflow-wrap:anywhere}
+#detail h2{padding-right:32px}
+#detail .row{flex-wrap:wrap}
+#uploadForm input[type=file],#commentForm input,#commentForm textarea{flex:1 1 200px;min-width:0;max-width:100%}
+#uploadForm button,#commentForm button{flex:0 0 auto}
+.flow{gap:2px}.flow li{min-width:0;overflow-wrap:anywhere}
+@media(max-width:720px){
+  .modal-box{padding:18px 16px 24px}
+  #uploadForm input[type=file]{flex-basis:100%}
+  #uploadForm button,#commentForm button{width:100%}
+  #commentForm input,#commentForm textarea{flex-basis:100%}
+  .actions>button{flex:1 1 100%}
+  .actions select{width:100%}
+  dl.info{margin:0}
+}
