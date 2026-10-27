@@ -442,6 +442,7 @@ async function openDetail(id) {
       <dt>สถานที่</dt><dd>${esc(r.location)}</dd>
       <dt>รายละเอียด</dt><dd>${esc(r.description) || '—'}</dd>
       <dt>วันที่แจ้ง</dt><dd>${fmtDate(r.created_at)}</dd>
+      <dt>ผู้รับผิดชอบ</dt><dd>${r.technician_name ? withPos(r.technician_name) : '<span class="muted">ยังไม่ได้มอบหมาย</span>'}</dd>
     </dl>
 
     <h3>ไฟล์แนบ</h3>
