@@ -1,5 +1,5 @@
 :root{--bg:#edf1f3;--card:#fff;--ink:#17252f;--muted:#5d6f7a;--line:#d9e1e5;--primary:#0b6b6f;--primary-d:#08575a;--tint:#e2f0f0;--danger:#b42318;
-font-family:"IBM Plex Sans Thai","Sarabun","Segoe UI",Tahoma,sans-serif}
+font-family:"Noto Sans Thai","Sarabun","Segoe UI",Tahoma,sans-serif}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 .hidden{display:none!important}
@@ -503,3 +503,17 @@ td select{min-width:130px}
 
 .note-field{flex-basis:100%;margin:0;font-size:15px;font-weight:500}
 .note-field textarea{margin-top:6px}
+
+/* แถบระยะการดำเนินงาน: เติมสีไล่ทีละขั้น ขั้นปัจจุบันกะพริบเบา ๆ */
+.flow li{position:relative;border-top:0;padding-top:12px}
+.flow li::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;border-radius:2px;background:var(--line)}
+.flow li::after{content:"";position:absolute;left:0;right:0;top:0;height:4px;border-radius:2px;background:#7fb5b7;transform:scaleX(0);transform-origin:left center}
+.flow li.past::after{animation:flowFill .45s ease-out forwards;animation-delay:calc(var(--i,0) * .16s)}
+.flow li.now::after{background:var(--primary);animation:flowFill .45s ease-out forwards,flowPulse 1.8s ease-in-out infinite;
+  animation-delay:calc(var(--i,0) * .16s),calc(var(--i,0) * .16s + .5s)}
+.flow.complete li.now::after{animation:flowFill .45s ease-out forwards;animation-delay:calc(var(--i,0) * .16s)}
+.flow li.past,.flow li.now{animation:flowLabel .4s ease-out both;animation-delay:calc(var(--i,0) * .16s)}
+@keyframes flowFill{to{transform:scaleX(1)}}
+@keyframes flowPulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes flowLabel{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.flow li.past::after,.flow li.now::after{transform:scaleX(1)}}

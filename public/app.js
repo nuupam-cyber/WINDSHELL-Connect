@@ -374,8 +374,8 @@ const FLOW = ['pending', 'assigned', 'in_progress', 'done', 'closed'];
 function progress(st) {
   const i = FLOW.indexOf(st);
   if (i < 0) return `<p class="muted">${st === 'rejected' ? 'เรื่องนี้ไม่ได้รับอนุมัติ' : 'เรื่องนี้ถูกยกเลิกแล้ว'}</p>`;
-  return `<ol class="flow">${FLOW.map((k, j) =>
-    `<li class="${j < i ? 'past' : j === i ? 'now' : ''}">${STATUS[k]}</li>`).join('')}</ol>`;
+  return `<ol class="flow ${i === FLOW.length - 1 ? 'complete' : ''}">${FLOW.map((k, j) =>
+    `<li style="--i:${j}" class="${j < i ? 'past' : j === i ? 'now' : ''}">${STATUS[k]}</li>`).join('')}</ol>`;
 }
 
 $('#rows').onclick = (e) => {
@@ -435,7 +435,7 @@ async function openDetail(id) {
     ${acts.length ? `
       <div class="actions">
         ${techs.length ? pickerHtml(r, techs) : ''}
-${showNote ? `<label class="note-field">หมายเหตุ <span class="muted small"><b>จำเป็นเมื่อไม่อนุมัติ</b></span>
+${showNote ? `<label class="note-field">หมายเหตุ <span class="muted small">ไม่บังคับเมื่ออนุมัติ · <b>จำเป็นเมื่อไม่อนุมัติ</b></span>
           <textarea id="actNote" rows="2" maxlength="500" placeholder="เช่น เหตุผลที่ไม่อนุมัติ หรือข้อความถึงผู้รับผิดชอบ"></textarea></label>` : ''}
         ${acts.map(([a, label, kind]) =>
           `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}
