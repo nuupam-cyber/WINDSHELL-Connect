@@ -67,13 +67,35 @@ app.use(session({
 // 3) ไฟล์หน้าเว็บ (HTML, CSS, JS)
 app.use(express.static(path.join(__dirname, '../public')));
 
+// deniedPage: หน้า HTML แจ้งว่าไม่มีสิทธิ์เข้าหน้า Admin พร้อมชื่อบัญชีและ Role ของผู้ที่พยายามเข้า
+// (ใช้กับการเปิดหน้าเว็บ ส่วน API ยังตอบ JSON { error } ตามเดิม) esc() กันชื่อที่มีอักขระ HTML
+const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าฝ่าย', technician: 'ช่าง/เจ้าหน้าที่', resident: 'ลูกบ้าน' };
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const deniedPage = (u) => `<!doctype html><html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ไม่มีสิทธิ์เข้าถึง · WINDSHELL Connect</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f3f6f7;color:#17252f;
+font-family:"Noto Sans Thai","Sarabun","Segoe UI",Tahoma,sans-serif;padding:16px}
+.box{max-width:440px;background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 8px 30px rgba(15,28,36,.12)}
+h1{margin:0 0 8px;font-size:1.4rem;color:#b3261e}dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:16px 0}
+dt{color:#6b7a83}dd{margin:0;font-weight:600}a{color:#0f6d6d}</style></head><body><div class="box">
+<h1>403 · ไม่มีสิทธิ์เข้าถึงหน้า Admin</h1>
+<p>บัญชีนี้ไม่มีสิทธิ์ <code>user.manage</code> ระบบได้บันทึกการพยายามเข้าถึงครั้งนี้ไว้ใน Log แล้ว</p>
+<dl><dt>ชื่อ</dt><dd>${esc(u.name)}</dd><dt>บัญชี</dt><dd>${esc(u.username)}</dd>
+<dt>บทบาท</dt><dd>${esc(ROLE_TH[u.role] || u.role)}</dd><dt>เวลา</dt>
+<dd>${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</dd></dl>
+<a href="/">← กลับหน้าหลัก</a></div></body></html>`;
+
 // แยกส่วน Admin ทาง Logical: หน้า /admin ไม่อยู่ใน public/ จึงเปิดตรงๆ ไม่ได้
 // ต้องผ่าน 3 ด่าน: มี session → authenticate → requirePermission('user.manage') ถ้าไม่ผ่านจะถูกปฏิเสธแม้พิมพ์ URL เอง
+// ไม่ผ่านด่านสิทธิ์ (403): requirePermission บันทึก Log แล้ว ตัวจัดการ error ท้าย Route แสดงหน้า deniedPage แทน JSON
 app.get('/admin',
   (req, res, next) => (req.session.userId ? next() : res.redirect('/')),
   authenticate,
   requirePermission('user.manage'),
-  (req, res) => res.sendFile(path.join(__dirname, '../private/admin.html'))
+  (req, res) => res.sendFile(path.join(__dirname, '../private/admin.html')),
+  (err, req, res, next) => (err.status === 403 && req.user
+    ? res.status(403).type('html').send(deniedPage(req.user))
+    : next(err))
 );
 
 // 4-6) API
