@@ -178,13 +178,20 @@ async function loadOptions() {
   $('#unitLabel').textContent = o.unit ? o.unit.unit_no : 'ยังไม่ได้ผูกห้อง';
   $('#categorySel').innerHTML = '<option value="">— เลือกประเภทงาน —</option>' +
     o.categories.map((c) =>
-      `<option value="${c.id}" data-req="${c.requires_detail}">${esc(c.name)}${c.requires_detail ? ' *' : ''}</option>`
+      `<option value="${c.id}" data-req="${c.requires_detail}" data-photo="${!!c.needs_photo}">${esc(c.name)}${c.requires_detail ? ' *' : ''}</option>`
     ).join('');
   $('#areaSel').innerHTML = '<option value="">— เลือกพื้นที่ส่วนกลาง —</option>' +
     o.commonAreas.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
 }
 
+function syncPhotoRule() {
+  const need = $('#categorySel').selectedOptions[0]?.dataset.photo === 'true';
+  $('#createFiles').required = need;
+  $('#fileLabel').textContent = need ? 'แนบรูปหรือไฟล์ (จำเป็น) *' : 'แนบรูปหรือไฟล์ (ไม่บังคับ)';
+}
+
 $('#categorySel').onchange = () => {
+  syncPhotoRule();
   const needed = $('#categorySel').selectedOptions[0]?.dataset.req === 'true';
   $('#descInput').required = needed;
   $('#descLabel').textContent = needed ? 'รายละเอียด (จำเป็น) *' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)';
@@ -238,29 +245,26 @@ $('#createForm').onsubmit = async (e) => {
     return showMsg(msg, 'กรุณาเลือกพื้นที่ส่วนกลาง');
   }
 
-  const body = {
-    category_id: Number(f.category_id),
-    priority: f.priority,
-    location_type: f.location_type,
-    description: f.description || '',
-  };
-  if (f.location_type === 'common') body.common_area_id = Number(f.common_area_id);
-
   const files = [...$('#createFiles').files];
   if (files.length > 3) return showMsg(msg, 'แนบได้สูงสุด 3 ไฟล์');
   if (files.some((x) => x.size > 5 * 1024 * 1024)) return showMsg(msg, 'มีไฟล์ใหญ่เกิน 5 MB');
+  if ($('#categorySel').selectedOptions[0]?.dataset.photo === 'true' && !files.length) {
+    return showMsg(msg, 'งานประเภทนี้ต้องแนบรูปอย่างน้อย 1 ไฟล์ เพื่อให้ช่างเห็นปัญหา');
+  }
+
+  // ส่งข้อมูลและไฟล์ในคำขอเดียว เพื่อให้ Server ตรวจและบังคับแนบไฟล์ได้
+  const body = new FormData();
+  body.append('category_id', f.category_id);
+  body.append('priority', f.priority);
+  body.append('location_type', f.location_type);
+  body.append('description', f.description || '');
+  if (f.location_type === 'common') body.append('common_area_id', f.common_area_id);
+  files.forEach((file) => body.append('files', file));
 
   try {
-    const created = await api('/requests', { method: 'POST', body });
-    const failed = [];
-    for (const file of files) {
-      const fd = new FormData();
-      fd.append('file', file);
-      try { await api(`/requests/${created.id}/attachments`, { method: 'POST', body: fd }); }
-      catch (err) { failed.push(`${file.name}: ${err.message}`); }
-    }
-    if (failed.length) toast(`ส่งคำขอแล้ว แต่แนบบางไฟล์ไม่สำเร็จ — ${failed.join(' · ')}`, 'error');
+    await api('/requests', { method: 'POST', body });
     e.target.reset();
+    syncPhotoRule();
     syncCreateForm();
     $('#areaWrap').classList.add('hidden');
     msg.className = 'success';

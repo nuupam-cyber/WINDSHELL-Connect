@@ -193,6 +193,19 @@ function withRefs(req, res, next) {
   res.json = (body) => json(addRefs(body));
   next();
 }
+// ประเภทงานของฝ่ายช่างอาคารต้องแนบรูป: ส่งธงให้หน้าฟอร์มตามฝ่ายในฐานข้อมูล
+app.get('/api/requests/options', authenticate, async (req, res, next) => {
+  const { rows } = await db.query(
+    `SELECT c.id FROM issue_categories c JOIN departments d ON d.id = c.department_id
+     WHERE d.name = 'ช่างอาคาร'`);
+  const ids = new Set(rows.map((r) => r.id));
+  const json = res.json.bind(res);
+  res.json = (b) => json(b && Array.isArray(b.categories)
+    ? { ...b, categories: b.categories.map((c) => ({ ...c, needs_photo: ids.has(c.id) })) }
+    : b);
+  next();
+});
+
 app.use('/api/requests', withRefs);
 app.use('/api/notifications', withRefs);
 

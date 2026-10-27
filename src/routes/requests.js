@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Router } = require('express');
+const multer = require('multer');
 const db = require('../db');
 const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
@@ -11,6 +12,26 @@ const { parseId, canView, inScope } = require('../services/access');
 
 const { withTransaction } = db;
 const router = Router();
+
+// แจ้งซ่อมพร้อมแนบไฟล์ในคำขอเดียว (สูงสุด 3 ไฟล์) ไฟล์เก็บในหน่วยความจำก่อน ตรวจแล้วค่อยเขียนลงดิสก์
+const MAX_FILE_SIZE = Number(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024;
+const MAX_CREATE_FILES = 3;
+const createUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE, files: MAX_CREATE_FILES },
+}).array('files', MAX_CREATE_FILES);
+function parseCreateUpload(req, res, next) {
+  createUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return next(new HttpError(413, 'ไฟล์ใหญ่เกินกำหนด'));
+    if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return next(new HttpError(400, `แนบได้สูงสุด ${MAX_CREATE_FILES} ไฟล์`));
+    }
+    next(err);
+  });
+}
+// งานของฝ่ายนี้ต้องแนบรูปเสมอ (ฝ่ายอื่นแนบหรือไม่ก็ได้)
+const PHOTO_REQUIRED_DEPARTMENT = 'ช่างอาคาร';
 
 const PRIORITIES = ['normal', 'urgent'];
 const LOCATION_TYPES = ['unit', 'common'];
@@ -98,7 +119,7 @@ router.get('/options', requirePermission('request.create'), async (req, res) => 
 });
 
 // แจ้งซ่อม: ตรวจทุกค่าจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาตรงๆ
-router.post('/', requirePermission('request.create'), async (req, res) => {
+router.post('/', requirePermission('request.create'), parseCreateUpload, async (req, res) => {
   const { user } = req;
   const b = req.body;
 
@@ -112,6 +133,22 @@ router.post('/', requirePermission('request.create'), async (req, res) => {
     'SELECT id, name, department_id, requires_detail FROM issue_categories WHERE id = $1 AND is_active', [categoryId]);
   if (!cat) throw new HttpError(400, 'ประเภทงานไม่ถูกต้อง');
   if (cat.requires_detail && !description) throw new HttpError(400, 'ประเภทนี้ต้องกรอกรายละเอียด');
+
+  // ตรวจไฟล์ฝั่ง Server: ต้องแนบถ้าเป็นงานช่างอาคาร และตรวจชนิดจากเนื้อไฟล์ทุกไฟล์ก่อนบันทึกอะไร
+  const files = req.files || [];
+  const { rows: [dept] } = await db.query('SELECT name FROM departments WHERE id = $1', [cat.department_id]);
+  if (dept && dept.name === PHOTO_REQUIRED_DEPARTMENT && files.length === 0) {
+    throw new HttpError(400, 'งานประเภทนี้ต้องแนบรูปอย่างน้อย 1 ไฟล์ เพื่อให้ช่างเห็นปัญหา');
+  }
+  if (files.length && !req.permissions.has('attachment.upload')) {
+    await deny(req, 'repair_request', null, 'create with attachment');
+    throw new HttpError(403, 'ไม่มีสิทธิ์อัปโหลดไฟล์');
+  }
+  const typed = files.map((f) => ({ file: f, type: detectType(f.buffer) }));
+  if (typed.some((t) => !t.type)) {
+    await audit(req, { eventType: 'attachment_upload', resourceType: 'repair_request', result: 'failure', detail: 'unsupported file type (create)' });
+    throw new HttpError(415, 'รองรับเฉพาะไฟล์ JPG, PNG หรือ PDF');
+  }
 
   let unitId = null;
   let areaId = null;
@@ -128,7 +165,10 @@ router.post('/', requirePermission('request.create'), async (req, res) => {
     placeLabel = area.name;
   }
 
-  const created = await withTransaction(async (client) => {
+  const written = [];
+  let created;
+  try {
+  created = await withTransaction(async (client) => {
     const { rows: [r] } = await client.query(
       `INSERT INTO repair_requests
          (category_id, unit_id, common_area_id, priority, title, description, requester_id, department_id)
@@ -141,8 +181,26 @@ router.post('/', requirePermission('request.create'), async (req, res) => {
        VALUES ($1, NULL, 'pending', $2)`,
       [r.id, user.id]
     );
+    for (const { file, type } of typed) {
+      const storedName = `${crypto.randomUUID()}${type.ext}`;
+      await fs.promises.writeFile(path.join(UPLOAD_DIR, storedName), file.buffer, { flag: 'wx' });
+      written.push(storedName);
+      await client.query(
+        `INSERT INTO attachments (request_id, original_name, stored_name, mime_type, size_bytes, uploaded_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [r.id, path.basename(file.originalname).slice(0, 255), storedName, type.mime, file.size, user.id]
+      );
+    }
     return r;
   });
+  } catch (err) {
+    // สร้างไม่สำเร็จ: ลบไฟล์ที่เขียนไปแล้ว ไม่ให้ค้างบนดิสก์
+    await Promise.all(written.map((n) => fs.promises.unlink(path.join(UPLOAD_DIR, n)).catch(() => {})));
+    throw err;
+  }
+  if (typed.length) {
+    await audit(req, { eventType: 'attachment_upload', resourceType: 'repair_request', resourceId: created.id, result: 'success', detail: `${typed.length} file(s) at create` });
+  }
 
   await audit(req, { eventType: 'request_create', resourceType: 'repair_request', resourceId: created.id, result: 'success' });
   res.status(201).json(created);
