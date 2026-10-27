@@ -246,8 +246,20 @@ $('#createForm').onsubmit = async (e) => {
   };
   if (f.location_type === 'common') body.common_area_id = Number(f.common_area_id);
 
+  const files = [...$('#createFiles').files];
+  if (files.length > 3) return showMsg(msg, 'แนบได้สูงสุด 3 ไฟล์');
+  if (files.some((x) => x.size > 5 * 1024 * 1024)) return showMsg(msg, 'มีไฟล์ใหญ่เกิน 5 MB');
+
   try {
-    await api('/requests', { method: 'POST', body });
+    const created = await api('/requests', { method: 'POST', body });
+    const failed = [];
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      try { await api(`/requests/${created.id}/attachments`, { method: 'POST', body: fd }); }
+      catch (err) { failed.push(`${file.name}: ${err.message}`); }
+    }
+    if (failed.length) toast(`ส่งคำขอแล้ว แต่แนบบางไฟล์ไม่สำเร็จ — ${failed.join(' · ')}`, 'error');
     e.target.reset();
     syncCreateForm();
     $('#areaWrap').classList.add('hidden');
