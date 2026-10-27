@@ -17,7 +17,7 @@ const { audit } = require('../logger');
 const { requirePermission, invalidateUser } = require('../middleware/auth');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
-const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS } = require('../config/permissions');
+const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES } = require('../config/permissions');
 
 const router = Router();
 
@@ -151,12 +151,13 @@ router.get('/departments', requirePermission('user.manage'), async (req, res) =>
 
 // ===== Role =====
 // GET /api/admin/roles — รายการ Role พร้อมจำนวนผู้ใช้ในแต่ละ Role (ใช้แสดงและตัดสินว่าลบได้ไหม)
+// in_code = Role หลักที่ระบบใช้ชื่อนี้อยู่ (หน้าเว็บล็อกช่องชื่อและซ่อนปุ่มลบ server ตรวจซ้ำอีกชั้น)
 router.get('/roles', requirePermission('role.manage'), async (req, res) => {
   const { rows } = await db.query(
     `SELECT r.id, r.name, r.description, COUNT(u.id)::int AS user_count
      FROM roles r LEFT JOIN users u ON u.role_id = r.id
      GROUP BY r.id ORDER BY r.id`);
-  res.json(rows);
+  res.json(rows.map((r) => ({ ...r, in_code: CODE_ROLES.includes(r.name) })));
 });
 
 // POST /api/admin/roles — เพิ่ม Role ใหม่ผ่านเว็บ ไม่ต้องแก้โค้ด จากนั้นไปติ๊กสิทธิ์ให้ในหน้า ACL
@@ -169,15 +170,18 @@ router.post('/roles', requirePermission('role.manage'), async (req, res) => {
   res.status(201).json(role);
 });
 
-// PATCH /api/admin/roles/:id — แก้ชื่อ/คำอธิบาย Role (ห้ามเปลี่ยนชื่อ admin เพราะโค้ดบางจุดอ้างชื่อนี้)
+// PATCH /api/admin/roles/:id — แก้ชื่อ/คำอธิบาย Role
+// Role หลัก (CODE_ROLES) แก้ได้เฉพาะคำอธิบาย เพราะโค้ดอ้างชื่อเหล่านี้อยู่ เช่น เลือกช่างจาก Role technician
 router.patch('/roles/:id', requirePermission('role.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM roles WHERE id = $1', [id]);
   if (!cur) throw new HttpError(404, 'ไม่พบ Role');
 
   const name = req.body.name !== undefined ? String(req.body.name).trim() : cur.name;
-  if (!ROLE_RE.test(name)) throw new HttpError(400, 'ชื่อ Role ไม่ถูกต้อง');
-  if (cur.name === 'admin' && name !== 'admin') throw new HttpError(409, 'เปลี่ยนชื่อ Role admin ไม่ได้');
+  if (!ROLE_RE.test(name)) throw new HttpError(400, 'ชื่อ Role ใช้ a-z และ _ ความยาว 3-50 ตัวอักษร');
+  if (name !== cur.name && CODE_ROLES.includes(cur.name)) {
+    throw new HttpError(409, `เปลี่ยนชื่อ Role ${cur.name} ไม่ได้ เพราะเป็น Role หลักที่ระบบใช้ (แก้ได้เฉพาะคำอธิบาย)`);
+  }
   const description = req.body.description !== undefined ? optText(req.body.description) : cur.description;
 
   const { rows: [role] } = await db.query(
@@ -186,12 +190,12 @@ router.patch('/roles/:id', requirePermission('role.manage'), async (req, res) =>
   res.json(role);
 });
 
-// DELETE /api/admin/roles/:id — ห้ามลบ admin และห้ามลบ Role ที่ยังมีผู้ใช้อยู่ (ตอบ 409)
+// DELETE /api/admin/roles/:id — ห้ามลบ Role หลัก และห้ามลบ Role ที่ยังมีผู้ใช้อยู่ (ตอบ 409)
 router.delete('/roles/:id', requirePermission('role.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM roles WHERE id = $1', [id]);
   if (!cur) throw new HttpError(404, 'ไม่พบ Role');
-  if (cur.name === 'admin') throw new HttpError(409, 'ลบ Role admin ไม่ได้');
+  if (CODE_ROLES.includes(cur.name)) throw new HttpError(409, `ลบ Role ${cur.name} ไม่ได้ เพราะเป็น Role หลักที่ระบบใช้`);
 
   const { rows: [{ count }] } = await db.query(
     'SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1', [id]);
@@ -204,17 +208,31 @@ router.delete('/roles/:id', requirePermission('role.manage'), async (req, res) =
 
 // ===== Permission =====
 // GET /api/admin/permissions — รายการ Permission ทั้งหมด
+//   in_code = โค้ดตรวจสิทธิ์นี้ด้วย requirePermission จริง (ลบ/เปลี่ยนชื่อไม่ได้)
+//   missing = สิทธิ์ที่โค้ดรองรับแต่ยังไม่มีในฐานข้อมูล (เช่น request.export) Admin เพิ่มผ่านเว็บได้
 router.get('/permissions', requirePermission('permission.manage'), async (req, res) => {
   const { rows } = await db.query('SELECT id, name, description FROM permissions ORDER BY name');
-  res.json(rows);
+  const names = new Set(rows.map((p) => p.name));
+  res.json({
+    permissions: rows.map((p) => ({ ...p, in_code: CODE_PERMISSIONS.has(p.name) })),
+    missing: [...CODE_PERMISSIONS].filter((n) => !names.has(n)).sort(),
+  });
 });
 
-// หมายเหตุ: Permission ที่เพิ่มที่นี่จะป้องกันอะไรจริงก็ต่อเมื่อโค้ดตรวจด้วย requirePermission(name)
+// POST /api/admin/permissions — เพิ่ม Permission ใหม่ผ่านเว็บ แล้วให้ Role admin อัตโนมัติ (Admin ใช้ได้ทุกฟังก์ชันรวมถึงที่เพิ่มภายหลัง)
+// สิทธิ์ใหม่ป้องกันอะไรจริงก็ต่อเมื่อโค้ดตรวจด้วย requirePermission(ชื่อนั้น) เช่น request.export ใน routes/requests.js
 router.post('/permissions', requirePermission('permission.manage'), async (req, res) => {
   const name = String(req.body.name ?? '').trim();
   if (!PERM_RE.test(name)) throw new HttpError(400, 'ชื่อสิทธิ์รูปแบบ resource.action เช่น equipment.read');
-  const { rows: [p] } = await db.query(
-    'INSERT INTO permissions (name, description) VALUES ($1, $2) RETURNING *', [name, optText(req.body.description)]);
+  const p = await withTransaction(async (client) => {
+    const { rows: [created] } = await client.query(
+      'INSERT INTO permissions (name, description) VALUES ($1, $2) RETURNING *', [name, optText(req.body.description)]);
+    await client.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT id, $1 FROM roles WHERE name = 'admin' ON CONFLICT DO NOTHING`, [created.id]);
+    return created;
+  });
+  invalidateUser();
   await audit(req, { eventType: 'permission_create', resourceType: 'permission', resourceId: p.id, result: 'success', detail: name });
   res.status(201).json(p);
 });

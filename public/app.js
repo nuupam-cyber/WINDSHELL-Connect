@@ -320,6 +320,20 @@ let allRows = [];
 $('#statusFilter').onchange = () => renderRows();
 $('#searchBox').oninput = () => renderRows();
 
+// ปุ่ม "ส่งออก CSV": server สร้างไฟล์เฉพาะรายการที่ผู้ใช้มองเห็น และตรวจสิทธิ์ request.export ทุกครั้ง
+// ถ้าสิทธิ์ถูกถอนไปแล้ว server ตอบ 403 → แสดงข้อความแทนการดาวน์โหลด
+$('#exportBtn').onclick = async () => {
+  try {
+    const res = await fetch('/api/requests/export', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'ส่งออกไม่สำเร็จ');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = `repair-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { alertErr(err); }
+};
+
 // โหลดรายการคำร้อง (server กรองตามสิทธิ์มาให้แล้ว) และรายชื่อเจ้าหน้าที่ แล้ววาดทุกส่วนที่ใช้ข้อมูลนี้
 async function loadRequests() {
   [allRows, DIR] = await Promise.all([api('/requests'), api('/directory').catch(() => [])]);

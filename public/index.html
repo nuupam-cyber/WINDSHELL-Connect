@@ -241,6 +241,8 @@
           <div class="toolbar">
             <input id="searchBox" type="search" placeholder="ค้นหาเลขที่ ประเภท สถานที่" aria-label="ค้นหา">
             <select id="statusFilter" class="narrow" aria-label="กรองสถานะ"></select>
+            <!-- แสดงเฉพาะผู้มีสิทธิ์ request.export (สิทธิ์นี้ Admin ต้องเพิ่มผ่านแท็บ Permission ก่อน) -->
+            <button id="exportBtn" type="button" class="export" data-perm="request.export">ส่งออก CSV</button>
           </div>
         </div>
         <div class="table-wrap">

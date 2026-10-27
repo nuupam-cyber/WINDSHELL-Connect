@@ -21,6 +21,7 @@ const { requirePermission } = require('../middleware/auth');
 const { uploadOne, uploadMany, detectType } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId, canView, inScope, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require('../services/access');
+const { refCode } = require('../services/refs');
 
 const { withTransaction } = db;
 const router = Router();
@@ -69,7 +70,8 @@ const BASE = `
          cat.name AS category,
          COALESCE(un.unit_no, ca.name) AS location,
          ru.name AS requester_name,
-         t.name  AS technician_name
+         t.name  AS technician_name,
+         t.position AS technician_position
   FROM repair_requests r
   JOIN issue_categories cat ON cat.id = r.category_id
   LEFT JOIN units un ON un.id = r.unit_id
@@ -91,10 +93,10 @@ async function findTechnician(client, techId, departmentId) {
   return t.id;
 }
 
-// GET /api/requests — รายการคำร้อง กรองตามสิทธิ์ใน SQL เลย (ข้อมูลที่ไม่มีสิทธิ์ไม่ถูกส่งออกจาก server)
+// visibleRequests: ดึงคำร้องที่ผู้ใช้มีสิทธิ์เห็น กรองตามสิทธิ์ใน SQL เลย (ข้อมูลที่ไม่มีสิทธิ์ไม่ถูกส่งออกจาก server)
 // มีหลายสิทธิ์ก็รวมด้วย OR เช่น หัวหน้าฝ่ายที่แจ้งเรื่องเองด้วย เห็นทั้งเรื่องของฝ่ายและเรื่องของตัวเอง
 // push(): เพิ่มค่าลง params แล้วคืน $1, $2 ... เพื่อใช้ Parameterized Query
-router.get('/', async (req, res) => {
+async function visibleRequests(req, limit) {
   const { user, permissions: perms } = req;
   const params = [];
   const push = (value) => { params.push(value); return `$${params.length}`; };
@@ -111,8 +113,39 @@ router.get('/', async (req, res) => {
   if (req.query.status) clauses.push(`r.status = ${push(String(req.query.status))}`);
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const { rows } = await db.query(`${BASE} ${where} ORDER BY r.created_at DESC LIMIT 200`, params);
-  res.json(rows);
+  const { rows } = await db.query(`${BASE} ${where} ORDER BY r.created_at DESC LIMIT ${push(limit)}`, params);
+  return rows;
+}
+
+// GET /api/requests — รายการคำร้องที่ผู้ใช้มองเห็น (200 รายการล่าสุด)
+router.get('/', async (req, res) => {
+  res.json(await visibleRequests(req, 200));
+});
+
+// GET /api/requests/export — ส่งออกรายการที่ผู้ใช้มองเห็นเป็นไฟล์ CSV (เปิดด้วย Excel ได้)
+// สิทธิ์ request.export ไม่ได้สร้างไว้ตอนติดตั้ง: ใช้สาธิตว่า Admin เพิ่ม Permission ผ่านเว็บ
+// แล้วกำหนดให้ Role ฟังก์ชันนี้จึงใช้งานได้ทันที (และถอนสิทธิ์แล้วถูกปฏิเสธทันที)
+const STATUS_TH = {
+  pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ',
+  done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก',
+};
+router.get('/export', requirePermission('request.export'), async (req, res) => {
+  const rows = await visibleRequests(req, 5000);
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  // วันเวลาตามเวลาประเทศไทย รูปแบบ 2026-10-27 22:38
+  const bkk = (d) => new Date(d).toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }).slice(0, 16);
+  const head = ['เลขที่', 'ประเภท', 'ความเร่งด่วน', 'สถานที่', 'ผู้แจ้ง', 'ผู้รับผิดชอบ', 'ตำแหน่งผู้รับผิดชอบ', 'สถานะ', 'วันเวลาที่แจ้ง'];
+  const lines = rows.map((r) => [
+    refCode(r.id), r.category, r.priority === 'urgent' ? 'ด่วน' : 'ปกติ', r.location, r.requester_name,
+    r.technician_name, r.technician_position, STATUS_TH[r.status] || r.status, bkk(r.created_at),
+  ].map(q).join(','));
+
+  await audit(req, { eventType: 'request_export', resourceType: 'repair_request', result: 'success', detail: `${rows.length} rows` });
+  const date = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="repair-requests-${date}.csv"`);
+  // ﻿ (BOM) ทำให้ Excel อ่านภาษาไทยถูกต้อง
+  res.send('﻿' + [head.map(q).join(','), ...lines].join('\r\n'));
 });
 
 // GET /api/requests/technicians — รายชื่อช่างในฝ่ายตัวเอง ใช้ตอนหัวหน้าฝ่ายเลือกผู้รับผิดชอบ

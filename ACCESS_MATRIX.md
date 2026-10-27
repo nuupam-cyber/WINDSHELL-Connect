@@ -17,6 +17,7 @@ Role: **Admin** = admin · **หัวหน้าฝ่าย** = dept_head · 
 | เริ่มงาน / แจ้งเสร็จ (ต้องกรอกรายละเอียดงานที่ทำ) | request.update_status | ✔ | – | เฉพาะงานตน | – |
 | ยืนยันปิดเรื่อง | request.close | ✔ | – | – | ของตน |
 | แดชบอร์ด | dashboard.view | ✔ | ✔ | ✔ | – |
+| ส่งออกรายการเป็น CSV (เฉพาะรายการที่ตนมองเห็น) | request.export | ✔ (หลัง Admin เพิ่มสิทธิ์ผ่านเว็บ) | กำหนดผ่าน ACL | – | – |
 | อัปโหลดไฟล์แนบ (JPG/PNG/PDF ≤ 5 MB) | attachment.upload | ✔ | ✔ | ✔ | ✔ |
 | ดู/ดาวน์โหลดไฟล์แนบ | attachment.read | ✔ | เฉพาะฝ่ายตน | เฉพาะงานตน | เฉพาะของตน |
 | ลบไฟล์แนบ | attachment.delete | ✔ (ผู้อัปโหลดหรือผู้มีสิทธิ์ดูทั้งหมด) | – | – | – |
@@ -26,15 +27,16 @@ Role: **Admin** = admin · **หัวหน้าฝ่าย** = dept_head · 
 | จัดการประเภทงาน | category.manage | ✔ | – | – | – |
 | จัดการอาคาร/ห้อง/สัญญา/พื้นที่ส่วนกลาง | property.manage | ✔ | – | – | – |
 | ผู้ใช้ (เพิ่ม แก้ Role ฝ่าย สถานะ ตั้งรหัสใหม่) | user.manage | ✔ | – | – | – |
-| Role (เพิ่ม แก้ ลบ) | role.manage | ✔ | – | – | – |
-| Permission (เพิ่ม แก้ ลบ) | permission.manage | ✔ | – | – | – |
+| Role (เพิ่ม แก้ไข ลบ) | role.manage | ✔ | – | – | – |
+| Permission (เพิ่ม แก้ไข ลบ) | permission.manage | ✔ | – | – | – |
 | ACL (Role × Permission) | acl.manage | ✔ | – | – | – |
 | ดู Log ย้อนหลัง | log.read | ✔ | – | – | – |
 | แก้ชื่อ / เปลี่ยนรหัสผ่านของตนเอง | (ต้องล็อกอิน) | ✔ | ✔ | ✔ | ✔ |
 
 ## ข้อจำกัดเพื่อความปลอดภัย
-- ห้ามลบ Role ที่ยังมีผู้ใช้ และห้ามลบ/เปลี่ยนชื่อ Role admin
+- ห้ามลบ Role ที่ยังมีผู้ใช้ · Role หลักที่โค้ดใช้ (admin, dept_head, technician, resident) ลบหรือเปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย
 - ห้ามเปลี่ยนผู้ใช้จนไม่มี Admin ที่ใช้งานได้เหลืออยู่
-- ห้ามถอน `user.manage`, `role.manage`, `permission.manage`, `acl.manage` จาก Admin
+- ห้ามถอน `user.manage`, `role.manage`, `permission.manage`, `acl.manage`, `announcement.*`, `property.manage` จาก Admin
+- เพิ่ม Permission ใหม่ผ่านเว็บแล้ว Role admin ได้รับสิทธิ์นั้นอัตโนมัติ · เปลี่ยน ACL แล้วมีผลทันทีโดยไม่ต้องรีสตาร์ต
 - Permission ที่ใช้ในโค้ดลบหรือเปลี่ยนชื่อไม่ได้ · Permission ใหม่มีผลก็ต่อเมื่อโค้ดเรียก `requirePermission('ชื่อ')`
 - Admin อยู่ที่ `/admin` และ `/api/admin/...` ผู้ที่ไม่มีสิทธิ์ถูกปฏิเสธ (403) แม้พิมพ์ URL โดยตรง

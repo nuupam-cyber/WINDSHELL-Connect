@@ -3,7 +3,7 @@
 // หน้านี้เปิดได้เฉพาะผู้มีสิทธิ์ user.manage (server ตรวจก่อนส่งไฟล์ admin.html)
 // และทุกปุ่มเรียก API /api/admin/... ซึ่งตรวจสิทธิ์ซ้ำทุกครั้ง
 //
-// แท็บ: ภาพรวม | ผู้ใช้ | Role | สิทธิ์ (ACL) | ประเภทงาน | ห้องและพื้นที่ | Log
+// แท็บ: ภาพรวม | ผู้ใช้ | Role | Permission | สิทธิ์ (ACL) | ประเภทงาน | ห้องและพื้นที่ | Log
 // แต่ละแท็บมีฟังก์ชัน renderXxx() ที่ดึงข้อมูลจาก API แล้ววาดลงใน #content
 // =====================================================================
 const $ = (s) => document.querySelector(s);
@@ -21,7 +21,6 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(data.error || data.message || 'เกิดข้อผิดพลาด');
   return data;
 }
-const STATUS = { pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ', done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก' };
 // กล่องโต้ตอบมาตรฐาน (แทน prompt/confirm ของเบราว์เซอร์)
 // dialog({ title, intro, fields: [{name,label,value,type,required,minlength,placeholder,hint}], submit, danger })
 // คืนค่า object ของค่าที่กรอก หรือ null ถ้ายกเลิก
@@ -89,12 +88,13 @@ const run = async (fn, after) => {
 };
 
 // views: จับคู่ชื่อแท็บกับฟังก์ชันวาดหน้า
-const views = { overview: renderOverview, users: renderUsers, roles: renderRoles, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
+const views = { overview: renderOverview, users: renderUsers, roles: renderRoles, permissions: renderPermissions, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
 
 const PAGE = {
   overview: ['ภาพรวมระบบ', 'สรุปการใช้งานของระบบ'],
   users: ['ผู้ใช้', 'เพิ่ม แก้ไข และจัดกลุ่มบัญชีผู้ใช้'],
   roles: ['Role', 'บทบาทที่ใช้กำหนดสิทธิ์ในระบบ'],
+  permissions: ['Permission', 'รายการสิทธิ์ที่ใช้ในระบบ'],
   acl: ['สิทธิ์การใช้งาน (ACL)', 'กำหนดว่าแต่ละบทบาททำอะไรได้บ้าง'],
   categories: ['ประเภทงาน', 'ประเภทงานซ่อมและฝ่ายที่รับผิดชอบ'],
   property: ['ห้องและพื้นที่', 'ห้องพัก สัญญา และพื้นที่ส่วนกลาง'],
@@ -152,22 +152,13 @@ api('/auth/me').then((m) => { $('#meName').textContent = m.name; $('#meBtn').tit
 api('/notifications').then((n) => { if (n && n.unread > 0) $('#bellDot').classList.remove('hidden'); }).catch(() => {});
 
 // ===== ภาพรวม =====
-// ส่งออกรายการคำร้องเป็นไฟล์ CSV (เปิดด้วย Excel ได้)
-function exportCsv(rows, dir = []) {
-  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const pad = (n) => String(n).padStart(2, '0');
-  const posOf = (n) => dir.find((d) => d.name === n)?.position || '';
-  const head = ['เลขที่', 'ประเภท', 'ความเร่งด่วน', 'สถานที่', 'ผู้แจ้ง', 'ผู้รับผิดชอบ', 'ตำแหน่งผู้รับผิดชอบ', 'สถานะ', 'วันที่แจ้ง', 'เวลา'];
-  const lines = rows.map((r) => {
-    const d = new Date(r.created_at);
-    return [r.id, r.category, r.priority === 'urgent' ? 'ด่วน' : 'ปกติ', r.location, r.requester_name,
-      r.technician_name || '', posOf(r.technician_name), STATUS[r.status] || r.status,
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-    ].map(q).join(',');
-  });
-  const blob = new Blob(['\ufeff' + [head.map(q).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+// ส่งออกรายการคำร้องเป็นไฟล์ CSV: server สร้างไฟล์และตรวจสิทธิ์ request.export (GET /api/requests/export)
+// ถ้าไม่มีสิทธิ์ server ตอบ 403 แล้วแสดงข้อความแทนการดาวน์โหลด
+async function exportCsv() {
+  const res = await fetch('/api/requests/export', { credentials: 'same-origin' });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'ส่งออกไม่สำเร็จ');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(await res.blob());
   a.download = `repair-requests-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
@@ -220,7 +211,7 @@ async function renderOverview() {
     const go = e.target.closest('[data-go]');
     if (go) return openTab(go.dataset.go);
     if (e.target.closest('[data-export]')) {
-      run(async () => exportCsv(await api('/requests'), await api('/admin/users').catch(() => [])));
+      run(exportCsv);
     }
   };
 }
@@ -384,15 +375,17 @@ async function renderRoles() {
       <table>
         <thead><tr><th>ชื่อ</th><th>คำอธิบาย</th><th>จำนวนผู้ใช้</th><th></th></tr></thead>
         <tbody>${roles.map((r) => `<tr>
-          <td><code>${esc(r.name)}</code></td>
+          <td><code>${esc(r.name)}</code>${r.in_code ? ' <span class="role">Role หลัก</span>' : ''}</td>
           <td>${esc(r.description)}</td>
           <td>${r.user_count}</td>
-          <td>${r.name === 'admin' ? '<span class="muted">ระบบ</span>'
-            : `<button class="danger small" data-del="${r.id}">ลบ</button>`}</td>
+          <td>
+            <button class="ghost small" data-edit="${r.id}">แก้ไข</button>
+            ${r.in_code ? '' : `<button class="danger small" data-del="${r.id}">ลบ</button>`}
+          </td>
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    <p class="muted">กำหนดสิทธิ์ของ Role ได้ที่แท็บ "สิทธิ์ (ACL)"</p>`;
+    <p class="muted">กำหนดสิทธิ์ของ Role ได้ที่แท็บ "สิทธิ์ (ACL)" · Role หลักที่ระบบใช้แก้ได้เฉพาะคำอธิบาย และลบไม่ได้</p>`;
 
   $('#roleForm').onsubmit = (e) => {
     e.preventDefault();
@@ -400,9 +393,82 @@ async function renderRoles() {
   };
 
   $('#content').onclick = async (e) => {
+    // แก้ไข Role → PATCH /api/admin/roles/:id (Role หลักไม่มีช่องชื่อให้แก้)
+    const ed = e.target.closest('[data-edit]');
+    if (ed) {
+      const r = roles.find((x) => String(x.id) === ed.dataset.edit);
+      const v = await dialog({
+        title: `แก้ไข Role ${r.name}`,
+        intro: r.in_code ? 'Role หลักที่ระบบใช้ เปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย' : '',
+        fields: [
+          ...(r.in_code ? [] : [{ name: 'name', label: 'ชื่อ Role', value: r.name, required: true, hint: 'a-z และ _ ความยาว 3-50 ตัวอักษร' }]),
+          { name: 'description', label: 'คำอธิบาย', value: r.description || '' },
+        ],
+      });
+      if (v) run(() => api(`/admin/roles/${r.id}`, { method: 'PATCH', body: v }), renderRoles);
+      return;
+    }
     const b = e.target.closest('[data-del]');
     if (b && await confirmBox({ title: 'ลบบทบาท', message: 'การลบบทบาทไม่สามารถย้อนกลับได้ ต้องการดำเนินการต่อหรือไม่', ok: 'ลบบทบาท', danger: true })) {
       run(() => api(`/admin/roles/${b.dataset.del}`, { method: 'DELETE' }), renderRoles);
+    }
+  };
+}
+
+// แท็บ Permission: เพิ่ม/แก้ไข/ลบรายการสิทธิ์ผ่านเว็บ (GET/POST/PATCH/DELETE /api/admin/permissions)
+// สิทธิ์ที่โค้ดใช้ตรวจอยู่ (in_code) ลบหรือเปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย
+// "สิทธิ์ที่ระบบรองรับแต่ยังไม่ได้เพิ่ม" (missing) เช่น request.export ใช้สาธิตการเพิ่ม Permission แล้วเชื่อมกับฟังก์ชัน
+async function renderPermissions() {
+  const { permissions, missing } = await api('/admin/permissions');
+  $('#content').innerHTML = `
+    ${missing.length ? `<div class="notice">สิทธิ์ที่ระบบรองรับแต่ยังไม่ได้เพิ่ม:
+      ${missing.map((n) => `<button class="ghost small" data-quick="${esc(n)}">+ ${esc(n)}</button>`).join(' ')}
+      <div class="small">เพิ่มแล้ว Admin ได้รับสิทธิ์ทันที จากนั้นไปติ๊กให้ Role อื่นที่แท็บ "สิทธิ์ (ACL)"</div></div>` : ''}
+    <form id="permForm" class="row wrap">
+      <input name="name" placeholder="ชื่อสิทธิ์ เช่น equipment.read" required>
+      <input name="description" placeholder="คำอธิบาย">
+      <button>เพิ่ม Permission</button>
+    </form>
+    <div class="table-wrap" style="margin-top:12px">
+      <table>
+        <thead><tr><th>ชื่อ</th><th>คำอธิบาย</th><th>ผูกกับฟังก์ชัน</th><th></th></tr></thead>
+        <tbody>${permissions.map((p) => `<tr>
+          <td><code>${esc(p.name)}</code></td>
+          <td>${esc(p.description)}</td>
+          <td>${p.in_code ? '<span class="badge s-done">ใช้ในโค้ด</span>' : '<span class="badge s-cancelled">ยังไม่ผูก</span>'}</td>
+          <td>
+            <button class="ghost small" data-edit="${p.id}">แก้ไข</button>
+            ${p.in_code ? '' : `<button class="danger small" data-del="${p.id}">ลบ</button>`}
+          </td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <p class="muted">สิทธิ์ใหม่จะป้องกันอะไรจริงก็ต่อเมื่อ Route ในโค้ดตรวจด้วย requirePermission ชื่อนั้น ("ใช้ในโค้ด")</p>`;
+
+  const add = (body) => run(() => api('/admin/permissions', { method: 'POST', body }), renderPermissions);
+  $('#permForm').onsubmit = (e) => { e.preventDefault(); add(formData(e.target)); };
+
+  $('#content').onclick = async (e) => {
+    const quick = e.target.closest('[data-quick]');
+    if (quick) return add({ name: quick.dataset.quick, description: PERM[quick.dataset.quick]?.[1] || '' });
+
+    const ed = e.target.closest('[data-edit]');
+    if (ed) {
+      const p = permissions.find((x) => String(x.id) === ed.dataset.edit);
+      const v = await dialog({
+        title: `แก้ไข Permission ${p.name}`,
+        intro: p.in_code ? 'สิทธิ์นี้ถูกใช้ในโค้ด เปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย' : '',
+        fields: [
+          ...(p.in_code ? [] : [{ name: 'name', label: 'ชื่อสิทธิ์', value: p.name, required: true, hint: 'รูปแบบ resource.action เช่น equipment.read' }]),
+          { name: 'description', label: 'คำอธิบาย', value: p.description || '' },
+        ],
+      });
+      if (v) run(() => api(`/admin/permissions/${p.id}`, { method: 'PATCH', body: v }), renderPermissions);
+      return;
+    }
+    const del = e.target.closest('[data-del]');
+    if (del && await confirmBox({ title: 'ลบ Permission', message: 'สิทธิ์นี้จะถูกถอนจากทุก Role ด้วย ต้องการดำเนินการต่อหรือไม่', ok: 'ลบ', danger: true })) {
+      run(() => api(`/admin/permissions/${del.dataset.del}`, { method: 'DELETE' }), renderPermissions);
     }
   };
 }
@@ -422,6 +488,7 @@ const PERM = {
   'attachment.read': ['ไฟล์แนบ', 'เปิดดูไฟล์แนบ'],
   'attachment.delete': ['ไฟล์แนบ', 'ลบไฟล์แนบ'],
   'dashboard.view': ['รายงานและบันทึก', 'ดูภาพรวมงาน', 'กราฟและตัวเลขสถิติ'],
+  'request.export': ['รายงานและบันทึก', 'ส่งออกรายการเป็น CSV', 'ปุ่มส่งออกในหน้ารายการแจ้งเรื่อง'],
   'log.read': ['รายงานและบันทึก', 'ดู Log การใช้งาน', 'ใครทำอะไรเมื่อไหร่'],
   'user.manage': ['จัดการระบบ', 'จัดการผู้ใช้', 'เข้าหน้า "จัดการระบบ" ได้'],
   'category.manage': ['จัดการระบบ', 'จัดการประเภทงาน'],
@@ -469,22 +536,7 @@ async function renderAcl() {
         <tbody>${body}</tbody>
       </table>
     </div>
-
-    <details class="ann-form">
-      <summary>สำหรับนักพัฒนา: เพิ่มรายการสิทธิ์ใหม่</summary>
-      <form id="permForm" class="row wrap" style="margin-top:12px">
-        <input name="name" placeholder="เช่น equipment.read" required>
-        <input name="description" placeholder="คำอธิบาย">
-        <button>เพิ่ม</button>
-      </form>
-      <p class="muted">สิทธิ์ใหม่จะป้องกันอะไรจริงก็ต่อเมื่อ Route ในโค้ดเรียกใช้ requirePermission ด้วยชื่อนั้น</p>
-    </details>`;
-
-  // เพิ่ม Permission ใหม่ผ่านเว็บ (POST /api/admin/permissions)
-  $('#permForm').onsubmit = (e) => {
-    e.preventDefault();
-    run(() => api('/admin/permissions', { method: 'POST', body: formData(e.target) }), renderAcl);
-  };
+    <p class="muted">เพิ่ม แก้ไข หรือลบรายการสิทธิ์ได้ที่แท็บ "Permission"</p>`;
 
   // เมื่อติ๊ก/เอาติ๊กออก: ถ้าเป็นสิทธิ์สำคัญของ admin ถามยืนยันก่อน ถ้า server ปฏิเสธ คืนค่า checkbox กลับเหมือนเดิม
   $('#content').onchange = async (e) => {
