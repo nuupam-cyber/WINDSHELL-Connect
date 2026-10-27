@@ -184,6 +184,38 @@ $('#categorySel').onchange = () => {
   $('#descLabel').textContent = needed ? 'รายละเอียด (จำเป็น) *' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)';
 };
 
+// ปรับหน้าตาฟอร์มตามความเร่งด่วน และเตือนถ้ามีเรื่องประเภทเดียวกันที่ยังค้างอยู่
+function syncCreateForm() {
+  const f = $('#createForm');
+  const urgent = f.priority.value === 'urgent';
+  $('#priorityHint').textContent = urgent
+    ? 'เรื่องนี้จะถูกทำเครื่องหมายว่าด่วน ใช้เฉพาะเมื่อกระทบการอยู่อาศัยจริง'
+    : 'เลือก “ด่วน” เมื่อกระทบการอยู่อาศัย เช่น น้ำรั่วหรือไฟดับ';
+  const b = f.querySelector('button.send');
+  b.classList.toggle('urgent', urgent);
+  b.textContent = urgent ? 'ส่งคำขอด่วน' : 'ส่งคำขอ';
+
+  const opt = $('#categorySel').selectedOptions[0];
+  const name = opt && opt.value ? opt.textContent.replace(/\s*\*$/, '') : '';
+  const dup = name && me
+    ? allRows.filter((r) => r.category === name && OPEN_STATUS.includes(r.status) && isMine(r, 'requester_id', 'requester_name'))
+    : [];
+  const box = $('#dupNotice');
+  box.classList.toggle('hidden', !dup.length);
+  box.innerHTML = dup.length
+    ? `คุณมีเรื่อง “${esc(name)}” ที่ยังค้างอยู่ ${dup.length} เรื่อง: `
+      + dup.map((r) => `<a href="#" data-open="${r.id}">#${r.id} ${STATUS[r.status]}</a>`).join(', ')
+      + '<br><span class="small">ตรวจสอบก่อนส่ง เพื่อไม่ให้แจ้งซ้ำ</span>'
+    : '';
+}
+$('#createForm').addEventListener('change', syncCreateForm);
+$('#dupNotice').onclick = (e) => {
+  const a = e.target.closest('[data-open]');
+  if (!a) return;
+  e.preventDefault();
+  openDetail(a.dataset.open).catch(alertErr);
+};
+
 $('#createForm').addEventListener('change', (e) => {
   if (e.target.name === 'location_type')
     $('#areaWrap').classList.toggle('hidden', e.target.value !== 'common');
@@ -211,6 +243,7 @@ $('#createForm').onsubmit = async (e) => {
   try {
     await api('/requests', { method: 'POST', body });
     e.target.reset();
+    syncCreateForm();
     $('#areaWrap').classList.add('hidden');
     msg.className = 'success';
     msg.textContent = 'ส่งคำขอเรียบร้อยแล้ว';
@@ -236,8 +269,71 @@ $('#searchBox').oninput = () => renderRows();
 async function loadRequests() {
   [allRows, DIR] = await Promise.all([api('/requests'), api('/directory').catch(() => [])]);
   renderSummary();
+  renderTodo();
   renderRows();
+  syncCreateForm();
 }
+
+// ===== งานที่ยังค้างอยู่ (แสดงบนสุด ไม่ต้องเลื่อนหา) =====
+const OPEN_STATUS = ['pending', 'assigned', 'in_progress', 'done'];
+let todoExpanded = false;
+const isMine = (r, idF, nameF) =>
+  (r[idF] !== undefined && r[idF] !== null ? Number(r[idF]) === Number(me.id) : r[nameF] === me.name);
+
+// คืนข้อความปุ่มถ้าเรื่องนี้รอให้ "คุณ" ทำ ไม่งั้นคืนค่าว่าง (ใช้กฎเดียวกับปุ่มในหน้ารายละเอียด)
+function todoAction(r) {
+  if (r.status === 'pending' && (can('request.assign') || can('request.approve'))) return 'พิจารณาเรื่อง';
+  if (r.status === 'assigned' && can('request.update_status') && isMine(r, 'technician_id', 'technician_name')) return 'เริ่มดำเนินการ';
+  if (r.status === 'in_progress' && can('request.update_status') && isMine(r, 'technician_id', 'technician_name')) return 'บันทึกว่าเสร็จ';
+  if (r.status === 'done' && can('request.close') && isMine(r, 'requester_id', 'requester_name')) return 'ตรวจรับงาน';
+  return '';
+}
+
+function waited(d) {
+  const m = Math.floor((Date.now() - new Date(d)) / 60000);
+  if (m < 60) return 'เพิ่งแจ้ง';
+  const h = Math.floor(m / 60);
+  return h < 24 ? `แจ้งมา ${h} ชั่วโมง` : `แจ้งมา ${Math.floor(h / 24)} วัน`;
+}
+
+function renderTodo() {
+  const items = allRows.filter((r) => OPEN_STATUS.includes(r.status)).map((r) => ({ r, act: todoAction(r) }));
+  // เรียง: รอคุณทำ > ด่วน > แจ้งมานานสุดก่อน
+  items.sort((a, b) => (!!b.act - !!a.act)
+    || ((b.r.priority === 'urgent') - (a.r.priority === 'urgent'))
+    || new Date(a.r.created_at) - new Date(b.r.created_at));
+  const need = items.filter((x) => x.act).length;
+
+  $('#todoCard').classList.toggle('has-need', need > 0);
+  const cnt = $('#todoCount');
+  cnt.textContent = need ? `รอคุณดำเนินการ ${need} รายการ` : items.length ? `เปิดอยู่ ${items.length} รายการ` : '';
+  cnt.classList.toggle('hidden', !cnt.textContent);
+  cnt.classList.toggle('calm', !need);
+
+  const shown = todoExpanded ? items : items.slice(0, 5);
+  $('#todoList').innerHTML = items.length
+    ? shown.map(({ r, act }) => `
+        <div class="todo ${act ? 'need' : ''} ${r.priority === 'urgent' ? 'urgent' : ''}" role="button" tabindex="0" data-open="${r.id}">
+          <div class="todo-main">
+            <div class="todo-title">#${r.id} ${esc(r.category)}${r.priority === 'urgent' ? '<span class="badge urgent">ด่วน</span>' : ''}</div>
+            <div class="todo-sub">${esc(r.location)}${r.requester_name && r.requester_name !== me.name ? ` · ผู้แจ้ง ${esc(r.requester_name)}` : ''} · ${waited(r.created_at)}</div>
+          </div>
+          ${act ? `<span class="todo-act">${act}</span>` : `<span class="badge s-${r.status}">${STATUS[r.status]}</span>`}
+        </div>`).join('')
+      + (items.length > 5
+        ? `<button class="ghost small" data-todo-more>${todoExpanded ? 'ย่อรายการ' : `ดูอีก ${items.length - 5} รายการ`}</button>` : '')
+    : '<p class="an-empty">ไม่มีงานค้างในขณะนี้</p>';
+}
+
+$('#todoList').onclick = (e) => {
+  if (e.target.closest('[data-todo-more]')) { todoExpanded = !todoExpanded; renderTodo(); return; }
+  const it = e.target.closest('[data-open]');
+  if (it) openDetail(it.dataset.open).catch(alertErr);
+};
+$('#todoList').onkeydown = (e) => {
+  const it = e.target.closest('[data-open]');
+  if (it && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(it.dataset.open).catch(alertErr); }
+};
 
 function renderSummary() {
   const n = (...st) => allRows.filter((r) => st.includes(r.status)).length;
@@ -288,12 +384,12 @@ async function openDetail(id) {
   const mine = (field) => r[field] === me.id;
 
   const acts = [];
-  if (r.status === 'pending' && can('request.approve')) acts.push(['reject', 'ไม่อนุมัติ', 'danger']);
   if (r.status === 'pending' && can('request.assign')) acts.push(['assign', 'อนุมัติและมอบหมายผู้รับผิดชอบ', 'ok']);
+  if (r.status === 'pending' && can('request.approve')) acts.push(['reject', 'ไม่อนุมัติ', 'danger']);
   if (r.status === 'assigned' && can('request.update_status') && mine('technician_id')) acts.push(['start', 'เริ่มดำเนินการ', 'info']);
   if (r.status === 'in_progress' && can('request.update_status') && mine('technician_id')) acts.push(['complete', 'ดำเนินการเสร็จ', 'ok']);
   if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', 'ok']);
-  if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'ghost']);
+  if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'cancel']);
 
   $('#detail').innerHTML = `
     <h2>#${r.id} ${esc(r.title)}</h2>
@@ -676,5 +772,5 @@ $('#markRead').onclick = async () => {
 
 // ตรวจการแจ้งเตือนใหม่ทุก 60 วินาที
 setInterval(() => {
-  if (me) { loadNotifications().catch(() => {}); loadAnnouncements().catch(() => {}); }
+  if (me) { loadNotifications().catch(() => {}); loadAnnouncements().catch(() => {}); loadRequests().catch(() => {}); }
 }, 60000);

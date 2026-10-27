@@ -217,3 +217,29 @@ dialog.dlg::backdrop{background:rgba(15,28,36,.5)}
 .when-row{display:grid;grid-template-columns:1fr 130px;gap:8px}.when input,.when select{margin-top:0}
 .chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 @media(max-width:640px){.when{grid-template-columns:1fr}.an{padding:12px}.an-ico{width:36px;height:36px;font-size:20px}}
+
+/* ระดับความสำคัญของปุ่ม: หลัก(เขียวน้ำทะเล) > ยืนยัน(เขียว) > เริ่มงาน(น้ำเงิน) > ระวัง(เหลือง) > อันตราย(แดง) > รอง(เทา) */
+button.warn{color:#7a4e00;border-color:#e3c98c;background:#fffaf0}button.warn:hover{background:#fdf1d6}
+button.good{color:#1c6431;border-color:#9fd1ad;background:#f3faf5}button.good:hover{background:#e0f2e5}
+button.cancel{background:#fff}button.cancel:hover{background:#fdf1f0}
+button:disabled{opacity:.5;cursor:not-allowed}
+/* งานที่ยังค้างอยู่ */
+.todo-card{border-left:4px solid var(--primary)}.todo-card.has-need{border-left-color:#c98a0b}
+.todo-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.todo-head h2{margin:0}
+.todo-count{font-size:13px;font-weight:600;color:#7a4e00;background:#fdf1d6;padding:2px 10px;border-radius:999px}.todo-count.calm{color:var(--muted);background:#e9eef0}
+.todo-list{display:grid;gap:8px}
+.todo{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:#fff}
+.todo:hover{background:#f3f8f8}.todo:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.todo.need{border-left:4px solid #c98a0b;background:#fffaf0}.todo.need:hover{background:#fdf1d6}
+.todo.urgent{border-left:4px solid #c62d1f}
+.todo-main{min-width:0}.todo-title{font-weight:600}.todo-sub{font-size:13px;color:var(--muted)}
+.todo-act{flex:none;font-size:13px;font-weight:600;color:#fff;background:var(--primary);padding:6px 12px;border-radius:6px}
+.todo-list>button{justify-self:start}
+@media(max-width:560px){.todo{flex-wrap:wrap}.todo-act{width:100%;text-align:center}}
+
+/* ฟอร์มแจ้งเรื่อง: ด่วน = ส้มแดง, ปกติ = เขียวน้ำทะเล */
+.seg .opt-urgent input:checked+span{background:#c2410c;color:#fff}
+.seg .opt-urgent span{font-weight:500}
+button.send.urgent{background:#c2410c}button.send.urgent:hover{background:#9a3412}button.send.urgent::before{content:"⚠ "}
+.notice{background:#fdf1d6;border:1px solid #e3c98c;border-left:4px solid #c98a0b;border-radius:6px;color:#5c3b00;font-size:14px;padding:8px 12px;margin:0 0 12px}
+.notice a{color:#5c3b00;font-weight:600}

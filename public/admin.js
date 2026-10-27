@@ -198,10 +198,10 @@ async function renderUsers() {
           <td><select data-field="role_id" data-id="${u.id}">${roleOpts(u.role_id)}</select></td>
           <td><select data-field="department_id" data-id="${u.id}">${deptOpts(u.department_id)}</select></td>
           <td><span class="badge ${u.is_active ? 's-done' : 's-cancelled'}">${u.is_active ? 'ใช้งาน' : 'ปิดแล้ว'}</span></td>
-          <td><button class="ghost small" data-toggle="${u.id}" data-active="${u.is_active}">
+          <td><button class="small ${u.is_active ? 'warn' : 'good'}" data-toggle="${u.id}" data-active="${u.is_active}">
             ${u.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button>
             <button class="ghost small" data-rename="${u.id}" data-name="${esc(u.name)}" data-position="${esc(u.position || '')}">แก้ชื่อ</button>
-            <button class="ghost small key" data-reset="${u.id}" data-name="${esc(u.username)}">ตั้งรหัสผ่านใหม่</button></td>
+            <button class="small warn" data-reset="${u.id}" data-name="${esc(u.username)}">ตั้งรหัสผ่านใหม่</button></td>
         </tr>`).join('')}</tbody>
       </table>
     </div>`;
@@ -461,7 +461,7 @@ async function renderCategories() {
           <td><select data-cat="${c.id}" data-field="department_id">${deptOpts(c.department_id)}</select></td>
           <td><input type="checkbox" data-cat="${c.id}" data-field="requires_detail" ${c.requires_detail ? 'checked' : ''}></td>
           <td><span class="badge ${c.is_active ? 's-done' : 's-cancelled'}">${c.is_active ? 'เปิดใช้' : 'ปิดแล้ว'}</span></td>
-          <td><button class="ghost small" data-cat-toggle="${c.id}" data-active="${c.is_active}">
+          <td><button class="small ${c.is_active ? 'warn' : 'good'}" data-cat-toggle="${c.id}" data-active="${c.is_active}">
             ${c.is_active ? 'ปิด' : 'เปิด'}</button></td>
         </tr>`).join('')}</tbody>
       </table>
@@ -580,7 +580,7 @@ async function renderProperty() {
             : '<span class="muted">ยังไม่มี</span>'}</td>
           <td><span class="badge ${c.is_active ? 's-done' : 's-cancelled'}">${c.is_active ? 'เปิดใช้งาน' : 'ปิดแล้ว'}</span></td>
           <td class="row">
-            <button class="ghost small" data-ct-toggle="${c.id}" data-active="${c.is_active}">
+            <button class="small ${c.is_active ? 'warn' : 'good'}" data-ct-toggle="${c.id}" data-active="${c.is_active}">
               ${c.is_active ? 'ปิดสัญญา' : 'เปิดสัญญา'}</button>
             ${c.registered_user_id
               ? `<button class="danger small" data-ct-unlink="${c.id}">ถอนผู้สมัคร</button>` : ''}
@@ -600,7 +600,7 @@ async function renderProperty() {
         <tbody>${areas.map((a) => `<tr>
           <td>${esc(a.name)}</td>
           <td><span class="badge ${a.is_active ? 's-done' : 's-cancelled'}">${a.is_active ? 'เปิดใช้งาน' : 'ปิดแล้ว'}</span></td>
-          <td><button class="ghost small" data-area-toggle="${a.id}" data-active="${a.is_active}">
+          <td><button class="small ${a.is_active ? 'warn' : 'good'}" data-area-toggle="${a.id}" data-active="${a.is_active}">
             ${a.is_active ? 'ปิด' : 'เปิด'}</button></td>
         </tr>`).join('')}</tbody>
       </table>

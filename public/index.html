@@ -94,6 +94,14 @@
       <div class="hello"><h1>ภาพรวมเรื่องแจ้งซ่อม</h1><span id="scopeNote" class="muted"></span></div>
       <div id="summary" class="summary"></div>
 
+      <div id="todoCard" class="card todo-card">
+        <div class="todo-head">
+          <h2>งานที่ยังค้างอยู่</h2>
+          <span id="todoCount" class="todo-count hidden"></span>
+        </div>
+        <div id="todoList" class="todo-list"></div>
+      </div>
+
       <div class="card ann-card">
         <div class="row between">
           <h2>ประกาศจากนิติบุคคล</h2>
@@ -165,12 +173,13 @@
           <label>ประเภทงาน
             <select name="category_id" id="categorySel" required></select>
           </label>
+          <p id="dupNotice" class="notice hidden" role="status"></p>
           <div class="label">ความเร่งด่วน
             <div class="seg">
               <label><input type="radio" name="priority" value="normal" checked><span>ปกติ</span></label>
-              <label><input type="radio" name="priority" value="danger"><span>ด่วน</span></label>
+              <label class="opt-urgent"><input type="radio" name="priority" value="urgent"><span>⚠ ด่วน</span></label>
             </div>
-            <span class="muted small">เลือก “ด่วน” เมื่อกระทบการอยู่อาศัย เช่น น้ำรั่วหรือไฟดับ</span>
+            <span id="priorityHint" class="muted small">เลือก “ด่วน” เมื่อกระทบการอยู่อาศัย เช่น น้ำรั่วหรือไฟดับ</span>
           </div>
           <div class="label" style="margin-top:12px">สถานที่
             <div class="seg">
