@@ -431,6 +431,7 @@ async function openDetail(id) {
   if (r.status === 'in_progress' && can('request.update_status') && mine('technician_id')) acts.push(['complete', 'ดำเนินการเสร็จ', 'ok']);
   if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', 'ok']);
   if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'cancel']);
+  if (r.status === 'pending' && !r.technician_id && can('request.cancel.own') && mine('requester_id')) acts.push(['delete', 'ลบเรื่องนี้', 'danger']);
 
   const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
   $('#detail').innerHTML = `
@@ -499,6 +500,17 @@ ${showNote ? `<label class="note-field">หมายเหตุ <span class="mu
     }
     const b = e.target.closest('[data-act]');
     if (!b) return;
+    if (b.dataset.act === 'delete') {
+      const ok = await confirmBox({ title: 'ลบเรื่องนี้?', message: 'เรื่อง ไฟล์แนบ และความคิดเห็นทั้งหมดจะถูกลบถาวร กู้คืนไม่ได้', ok: 'ลบเรื่อง', danger: true });
+      if (!ok) return;
+      try {
+        await api(`/requests/${id}`, { method: 'DELETE' });
+        $('#modal').classList.add('hidden');
+        toast('ลบเรื่องแล้ว');
+        loadRequests().catch(alertErr);
+      } catch (err) { $('#detailMsg').textContent = err.message; }
+      return;
+    }
     const noteEl = $('#actNote');
     const body = { note: noteEl?.value.trim() || undefined };
     if (b.dataset.act === 'reject' && !body.note) {

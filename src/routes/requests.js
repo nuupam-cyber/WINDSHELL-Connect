@@ -386,4 +386,23 @@ for (const [action, rule] of Object.entries(TRANSITIONS)) {
     (req, res) => runTransition(req, res, action));
 }
 
+// ลบเรื่องถาวร: เฉพาะเจ้าของเรื่อง และยังไม่ถูกมอบหมายงาน (ประวัติ ไฟล์แนบ ความคิดเห็น ลบตามด้วย CASCADE)
+router.delete('/:id', requirePermission('request.cancel.own'), async (req, res) => {
+  const id = parseId(req.params.id);
+  await withTransaction(async (client) => {
+    const { rows: [r] } = await client.query('SELECT * FROM repair_requests WHERE id = $1 FOR UPDATE', [id]);
+    if (!r || !canView(req.user, req.permissions, r)) throw new HttpError(404, 'ไม่พบรายการ');
+    if (r.requester_id !== req.user.id) {
+      await deny(req, 'repair_request', id, 'delete: not requester');
+      throw new HttpError(403, 'ลบได้เฉพาะเรื่องที่ตนแจ้ง');
+    }
+    if (r.status !== 'pending' || r.technician_id) {
+      throw new HttpError(409, 'ลบไม่ได้ เพราะเรื่องนี้ถูกพิจารณาหรือมอบหมายงานแล้ว');
+    }
+    await client.query('DELETE FROM repair_requests WHERE id = $1', [id]);
+  });
+  await audit(req, { eventType: 'request_delete', resourceType: 'repair_request', resourceId: id, result: 'success' });
+  res.json({ ok: true });
+});
+
 module.exports = router;
