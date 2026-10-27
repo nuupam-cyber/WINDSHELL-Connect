@@ -14,7 +14,7 @@ const { Router } = require('express');
 const db = require('../db');
 const { withTransaction } = db;
 const { audit } = require('../logger');
-const { requirePermission } = require('../middleware/auth');
+const { requirePermission, invalidateUser } = require('../middleware/auth');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
 const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS } = require('../config/permissions');
@@ -36,16 +36,11 @@ function checkPassword(pw) {
 const optText = (v) => (v ? String(v).trim() : null);
 
 // ===== ผู้ใช้ =====
-// หมายเหตุ: GET /users ตัวนี้ถูกบังด้วย GET /users ใน admin-extra.js ซึ่งถูกผูกก่อน (Express ใช้ตัวแรกที่ตรง)
+// GET /api/admin/users — รายชื่อผู้ใช้ทั้งหมดพร้อมตำแหน่ง ไม่ SELECT password_hash ออกมา เพื่อไม่ให้ Hash ไปแสดงบนหน้าเว็บ
 router.get('/users', requirePermission('user.manage'), async (req, res) => {
   const { rows } = await db.query(
-    `SELECT u.id, u.username, u.name, u.role_id, r.name AS role,
-            u.department_id, d.name AS department, u.is_active
-     FROM users u
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN departments d ON d.id = u.department_id
-     ORDER BY u.id`
-  );
+    `SELECT id, username, name, position, role_id, department_id, is_active
+     FROM users ORDER BY id`);
   res.json(rows);
 });
 
@@ -117,7 +112,35 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
     return `role ${cur.role_name}->${role.name}, active ${cur.is_active}->${isActive}${hash ? ', password changed' : ''}`;
   });
 
+  invalidateUser(id); // Role/สถานะใหม่มีผลกับคำขอถัดไปของผู้ใช้คนนี้ทันที
   await audit(req, { eventType: 'user_update', resourceType: 'user', resourceId: id, result: 'success', detail });
+  res.json({ ok: true });
+});
+
+// PATCH /api/admin/users/:id/profile — แก้ชื่อ-นามสกุล และตำแหน่ง (แยกคนละช่อง)
+router.patch('/users/:id/profile', requirePermission('user.manage'), async (req, res) => {
+  const id = parseId(req.params.id);
+  const name = String(req.body.name ?? '').trim();
+  const position = String(req.body.position ?? '').trim();
+  if (!name || name.length > 100) throw new HttpError(400, 'ชื่อต้องไม่ว่างและยาวไม่เกิน 100 ตัวอักษร');
+  if (position.length > 100) throw new HttpError(400, 'ตำแหน่งยาวเกิน 100 ตัวอักษร');
+  const { rowCount } = await db.query(
+    'UPDATE users SET name = $1, position = $2 WHERE id = $3', [name, position || null, id]);
+  if (!rowCount) throw new HttpError(404, 'ไม่พบผู้ใช้');
+  invalidateUser(id);
+  await audit(req, { eventType: 'user_update', resourceType: 'user', resourceId: id, result: 'success', detail: 'name/position' });
+  res.json({ ok: true });
+});
+
+// POST /api/admin/users/:id/password — Admin ตั้งรหัสผ่านใหม่ให้ผู้ใช้ที่ลืมรหัส
+// Hash ด้วย bcrypt ก่อนบันทึก และ Log แค่ว่าตั้งให้ใคร ไม่บันทึกรหัสผ่าน
+router.post('/users/:id/password', requirePermission('user.manage'), async (req, res) => {
+  const id = parseId(req.params.id);
+  checkPassword(req.body.password);
+  const hash = await bcrypt.hash(req.body.password, 12);
+  const { rowCount } = await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, id]);
+  if (!rowCount) throw new HttpError(404, 'ไม่พบผู้ใช้');
+  await audit(req, { eventType: 'password_reset', resourceType: 'user', resourceId: id, result: 'success' });
   res.json({ ok: true });
 });
 
@@ -223,6 +246,7 @@ router.delete('/permissions/:id', requirePermission('permission.manage'), async 
   if (CODE_PERMISSIONS.has(cur.name)) throw new HttpError(409, 'สิทธิ์นี้ถูกใช้ในโค้ด ลบไม่ได้');
 
   await db.query('DELETE FROM permissions WHERE id = $1', [id]);
+  invalidateUser(); // ล้าง cache สิทธิ์ของทุกคน ให้มีผลทันที
   await audit(req, { eventType: 'permission_delete', resourceType: 'permission', resourceId: id, result: 'success', detail: cur.name });
   res.json({ ok: true });
 });
@@ -246,6 +270,7 @@ router.post('/acl', requirePermission('acl.manage'), async (req, res) => {
   await db.query(
     'INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
     [roleId, permId]);
+  invalidateUser(); // ล้าง cache สิทธิ์ของทุกคน ให้มีผลทันทีโดยไม่ต้องรีสตาร์ต
   await audit(req, { eventType: 'permission_grant', resourceType: 'role_permission', resourceId: roleId, result: 'success', detail: `permission_id=${permId}` });
   res.json({ ok: true });
 });
@@ -263,6 +288,7 @@ router.delete('/acl/:roleId/:permissionId', requirePermission('acl.manage'), asy
   }
 
   await db.query('DELETE FROM role_permissions WHERE role_id = $1 AND permission_id = $2', [roleId, permId]);
+  invalidateUser();
   await audit(req, { eventType: 'permission_revoke', resourceType: 'role_permission', resourceId: roleId, result: 'success', detail: `${g.role} -/- ${g.permission}` });
   res.json({ ok: true });
 });

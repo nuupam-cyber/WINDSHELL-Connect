@@ -1,6 +1,7 @@
 // =====================================================================
-// src/middleware/errorHandler.js — คลาส HttpError สำหรับโยน error พร้อม status code
-// ตัวอย่าง: throw new HttpError(403, 'ไม่มีสิทธิ์ดำเนินการนี้') → ตัวจัดการ error จะตอบ 403 พร้อมข้อความนี้
+// src/middleware/errorHandler.js — การจัดการข้อผิดพลาดของทั้งระบบ
+// HttpError: โยน error พร้อม status code เช่น throw new HttpError(403, 'ไม่มีสิทธิ์ดำเนินการนี้')
+// errorHandler: ผูกไว้ท้ายสุดใน server.js แปลง error ทุกชนิดเป็น JSON { error: 'ข้อความ' } พร้อม status ที่เหมาะสม
 // =====================================================================
 const multer = require('multer');
 
@@ -11,29 +12,28 @@ class HttpError extends Error {
   }
 }
 
-// errorHandler: ตัวจัดการ error แบบแยกชนิด (ไฟล์ใหญ่เกิน, JSON ผิดรูปแบบ, ข้อมูลซ้ำ ฯลฯ)
-// หมายเหตุ: ตอนนี้ server.js ใช้ Global Error Handler ของตัวเองท้ายไฟล์ ฟังก์ชันนี้ไม่ได้ถูก app.use อยู่
+// Express รู้ว่าเป็น error handler เพราะรับ 4 พารามิเตอร์ (err, req, res, next)
 function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
+  const send = (status, error) => res.status(status).json({ error });
 
+  // error จาก multer (การอัปโหลดไฟล์) เช่น ไฟล์ใหญ่เกินกำหนด
   if (err instanceof multer.MulterError) {
-    const tooLarge = err.code === 'LIMIT_FILE_SIZE';
-    return res.status(tooLarge ? 413 : 400).json({
-      error: tooLarge ? 'ไฟล์มีขนาดเกินที่กำหนด' : 'อัปโหลดไฟล์ไม่สำเร็จ',
-    });
+    if (err.code === 'LIMIT_FILE_SIZE') return send(413, 'ไฟล์มีขนาดเกิน 5 MB');
+    if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') return send(400, 'แนบได้สูงสุด 3 ไฟล์');
+    return send(400, 'อัปโหลดไฟล์ไม่สำเร็จ');
   }
-  if (err.type === 'entity.parse.failed') {
-    return res.status(400).json({ error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
-  }
-  if (err instanceof HttpError) {
-    return res.status(err.status).json({ error: err.message });
-  }
+  if (err.type === 'entity.parse.failed') return send(400, 'รูปแบบข้อมูล JSON ไม่ถูกต้อง');
+  if (err instanceof HttpError) return send(err.status, err.message);
   // รหัส error ของ PostgreSQL: 23505 = ค่าซ้ำกับ UNIQUE, 23503 = อ้างอิง Foreign Key ที่ไม่มีอยู่
-  if (err.code === '23505') return res.status(409).json({ error: 'ข้อมูลซ้ำกับที่มีอยู่แล้ว' });
-  if (err.code === '23503') return res.status(400).json({ error: 'ข้อมูลอ้างอิงไม่ถูกต้อง' });
+  if (err.code === '23505') return send(409, 'ข้อมูลซ้ำกับที่มีอยู่แล้ว');
+  if (err.code === '23503') return send(400, 'ข้อมูลอ้างอิงไม่ถูกต้อง');
+  // error 4xx อื่นจากไลบรารี (เช่น body ใหญ่เกิน) ส่งข้อความเดิมได้
+  if (Number.isInteger(err.status) && err.status >= 400 && err.status < 500) return send(err.status, err.message);
 
-  console.error(err);
-  res.status(500).json({ error: 'เกิดข้อผิดพลาดภายในระบบ' });
+  // นอกนั้นคือ error ภายใน: บันทึกไว้ดูใน console แต่ไม่ส่งรายละเอียดให้ผู้ใช้ ป้องกันข้อมูลระบบรั่วไหล
+  console.error('API Error:', err);
+  send(500, 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์');
 }
 
 module.exports = { HttpError, errorHandler };

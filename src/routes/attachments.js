@@ -3,23 +3,20 @@
 // ไฟล์ไม่ได้เปิดเป็น URL สาธารณะ ทุกครั้งที่เปิดต้องผ่านการตรวจสิทธิ์ในไฟล์นี้
 // (การอัปโหลดอยู่ใน routes/requests.js)
 // =====================================================================
-const fs = require('fs');
-const path = require('path');
 const { Router } = require('express');
 const db = require('../db');
 const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
-const { UPLOAD_DIR } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId, canView, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require('../services/access');
 
 const router = Router();
 
-// withData: ดึงเนื้อไฟล์มาด้วย (ใช้ตอนเปิดดูเท่านั้น)
 // loadAttachment: ดึงข้อมูลไฟล์พร้อมข้อมูลเจ้าของคำร้อง (ผู้แจ้ง, ฝ่าย, ช่าง) เพื่อใช้ตรวจสิทธิ์ด้วย canView
+// withData: ดึงเนื้อไฟล์มาด้วย (ใช้ตอนเปิดดูเท่านั้น ตอนลบไม่ต้องโหลดไฟล์)
 async function loadAttachment(id, withData = false) {
   const { rows: [a] } = await db.query(
-    `SELECT a.id, a.request_id, a.original_name, a.stored_name, a.mime_type, a.uploaded_by,
+    `SELECT a.id, a.request_id, a.original_name, a.mime_type, a.uploaded_by,
             ${STATUS_UNCHANGED_SQL} AS status_unchanged,
             ${withData ? 'a.data,' : ''} r.requester_id, r.department_id, r.technician_id
      FROM attachments a JOIN repair_requests r ON r.id = a.request_id
@@ -29,7 +26,6 @@ async function loadAttachment(id, withData = false) {
   return a;
 }
 
-// เปิดดูหรือดาวน์โหลด ผ่าน Route ที่ตรวจสิทธิ์ ไม่เปิด static folder
 // GET /api/attachments/:id — ด่านตรวจ: สิทธิ์ attachment.read → ต้องดูคำร้องที่ไฟล์นี้ผูกอยู่ได้ → ส่งไฟล์
 // ?download=1 → ให้เบราว์เซอร์ดาวน์โหลด, ไม่ใส่ → เปิดดูในแท็บ
 // nosniff: บังคับให้เบราว์เซอร์เชื่อ Content-Type ที่ server กำหนด ไม่เดาชนิดไฟล์เอง
@@ -41,24 +37,21 @@ router.get('/:id', requirePermission('attachment.read'), async (req, res) => {
     throw new HttpError(404, 'ไม่พบไฟล์');
   }
 
+  // ไฟล์ที่อัปโหลดก่อนย้ายมาเก็บในฐานข้อมูลไม่มีเนื้อไฟล์แล้ว (ดิสก์ของ Render ถูกล้างตอน deploy)
+  if (!a.data) {
+    return res.status(404).type('text/plain; charset=utf-8').send('ไม่พบเนื้อไฟล์นี้บนเซิร์ฟเวอร์ กรุณาแนบไฟล์ใหม่');
+  }
+
   await audit(req, { eventType: 'attachment_view', resourceType: 'attachment', resourceId: id, result: 'success' });
 
   const disposition = req.query.download ? 'attachment' : 'inline';
   res.setHeader('Content-Type', a.mime_type);
   res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodeURIComponent(a.original_name)}`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  if (a.data) return res.send(a.data);
-
-  // ไฟล์เก่าที่เคยเก็บบนดิสก์ อาจหายไปแล้วหลัง deploy
-  const file = path.join(UPLOAD_DIR, a.stored_name);
-  if (fs.existsSync(file)) return res.sendFile(file);
-  res.removeHeader('Content-Disposition');
-  res.status(404).type('text/plain; charset=utf-8')
-    .send('ไฟล์นี้ไม่อยู่บนเซิร์ฟเวอร์แล้ว (อัปโหลดก่อนย้ายมาเก็บในฐานข้อมูล) กรุณาแนบไฟล์ใหม่');
+  res.send(a.data);
 });
 
-// ลบไฟล์: ต้องมี attachment.delete หรือ attachment.upload แล้วตรวจเงื่อนไขละเอียดใน canDeleteAttachment
-// DELETE /api/attachments/:id — กติกาละเอียดอยู่ใน canDeleteAttachment (services/access.js)
+// DELETE /api/attachments/:id — ต้องมี attachment.delete หรือ attachment.upload แล้วตรวจกติกาละเอียดใน canDeleteAttachment (services/access.js)
 // ลบแล้วบันทึก Log attachment_delete ถ้าไม่ผ่านบันทึก Log access_denied พร้อมเหตุผล
 router.delete('/:id', async (req, res) => {
   const id = parseId(req.params.id);
@@ -79,7 +72,6 @@ router.delete('/:id', async (req, res) => {
   }
 
   await db.query('DELETE FROM attachments WHERE id = $1', [id]);
-  await fs.promises.unlink(path.join(UPLOAD_DIR, a.stored_name)).catch(() => {});
   await audit(req, { eventType: 'attachment_delete', resourceType: 'attachment', resourceId: id, result: 'success' });
   res.json({ ok: true });
 });

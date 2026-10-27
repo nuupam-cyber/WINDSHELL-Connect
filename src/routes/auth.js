@@ -57,9 +57,8 @@ router.post('/logout', async (req, res) => {
 // GET /api/auth/me — ต้องผ่าน authenticate ก่อน ส่งข้อมูลที่ปลอดภัยเท่านั้น (ไม่มี password_hash)
 // permissions ที่ส่งไปใช้แค่ซ่อน/แสดงปุ่มในหน้าเว็บ ส่วนการตรวจสิทธิ์จริงทำที่ server ทุกครั้ง
 router.get('/me', authenticate, async (req, res) => {
-  const { id, username, name, role, department_id } = req.user;
-  const { rows: [p] } = await db.query('SELECT position FROM users WHERE id = $1', [id]);
-  res.json({ id, username, name, role, department_id, position: p?.position || '', permissions: [...req.permissions] });
+  const { id, username, name, role, department_id, position } = req.user;
+  res.json({ id, username, name, role, department_id, position: position || '', permissions: [...req.permissions] });
 });
 
 // สมัครบัญชีลูกบ้าน ต้องใช้เลขที่สัญญาที่ยังไม่เคยถูกใช้สมัคร

@@ -32,7 +32,7 @@ const STAFF = [
 ];
 
 // ไฟล์ SQL เรียงตามลำดับเวอร์ชัน รันซ้ำได้
-const SQL_FILES = ['schema.sql', 'v2.sql', 'v3.sql', 'v4.sql', 'v5.sql'];
+const SQL_FILES = ['schema.sql', 'v2.sql', 'v3.sql', 'v4.sql', 'v5.sql', 'v6.sql'];
 
 async function main() {
   for (const file of SQL_FILES) {

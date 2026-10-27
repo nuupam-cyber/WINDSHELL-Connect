@@ -1,11 +1,11 @@
 // =====================================================================
 // src/routes/announcements.js — ประกาศจากนิติบุคคล (path: /api/announcements)
 // อ่าน: announcement.read (ทุก Role) | สร้าง/ยกเลิก: announcement.manage
-// การตรวจว่า "ยกเลิกได้เฉพาะผู้สร้าง" อยู่ใน server.js ซึ่งทำงานก่อน Route ยกเลิกในไฟล์นี้
+// ยกเลิกได้เฉพาะประกาศที่ตนสร้าง (ตรวจเงื่อนไขเจ้าของข้อมูลฝั่ง server)
 // =====================================================================
 const { Router } = require('express');
 const db = require('../db');
-const { audit } = require('../logger');
+const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
@@ -14,14 +14,16 @@ const router = Router();
 // ประเภทประกาศที่อนุญาต ค่าที่ส่งมาต้องอยู่ในรายการนี้เท่านั้น
 const TYPES = ['elevator', 'maintenance', 'water', 'electric', 'aircon', 'general'];
 
-// ประกาศที่ยังใช้งานอยู่และยังไม่หมดเวลา เรียงตามเวลาเริ่ม
+// GET /api/announcements — ประกาศที่ยังใช้งานอยู่และยังไม่หมดเวลา เรียงตามเวลาเริ่ม
+// mine = ผู้ใช้เป็นคนสร้างประกาศนี้ (หน้าเว็บใช้ตัดสินว่าจะแสดงปุ่ม "ยกเลิกประกาศ" ไหม)
 router.get('/', requirePermission('announcement.read'), async (req, res) => {
   const { rows } = await db.query(
-    `SELECT a.id, a.type, a.title, a.detail, a.starts_at, a.ends_at, u.name AS author
+    `SELECT a.id, a.type, a.title, a.detail, a.starts_at, a.ends_at, u.name AS author,
+            (a.created_by = $1) AS mine
      FROM announcements a JOIN users u ON u.id = a.created_by
      WHERE a.is_active AND a.ends_at >= NOW()
      ORDER BY a.starts_at
-     LIMIT 30`);
+     LIMIT 30`, [req.user.id]);
   res.json(rows);
 });
 
@@ -56,9 +58,13 @@ router.post('/', requirePermission('announcement.manage'), async (req, res) => {
 // POST /api/announcements/:id/cancel — ไม่ลบจริง แค่ตั้ง is_active = FALSE (Soft delete) ประวัติยังอยู่
 router.post('/:id/cancel', requirePermission('announcement.manage'), async (req, res) => {
   const id = parseId(req.params.id);
-  const { rowCount } = await db.query(
-    'UPDATE announcements SET is_active = FALSE WHERE id = $1 AND is_active', [id]);
-  if (!rowCount) throw new HttpError(404, 'ไม่พบประกาศ');
+  const { rows: [a] } = await db.query('SELECT created_by FROM announcements WHERE id = $1 AND is_active', [id]);
+  if (!a) throw new HttpError(404, 'ไม่พบประกาศ');
+  if (a.created_by !== req.user.id) {
+    await deny(req, 'announcement', id, 'cancel: not creator');
+    throw new HttpError(403, 'ยกเลิกได้เฉพาะผู้ที่สร้างประกาศนี้เท่านั้น');
+  }
+  await db.query('UPDATE announcements SET is_active = FALSE WHERE id = $1', [id]);
 
   await audit(req, {
     eventType: 'announcement_cancel', resourceType: 'announcement',

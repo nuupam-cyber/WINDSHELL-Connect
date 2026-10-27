@@ -652,7 +652,7 @@ tbody tr[data-id]:hover {
   margin-left: 6px;
 }
 
-.badge.urgent::before,.ann-body .badge::before {
+.badge.urgent::before {
   display: none;
 }
 
@@ -759,25 +759,6 @@ ul.timeline li {
 .actions select {
   width: auto;
   margin-top: 0;
-}
-
-#commentBox {
-  margin-top: 18px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-
-.comment {
-  border-bottom: 1px solid var(--line);
-  padding: 8px 0;
-  font-size: 14px;
-}
-
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
 }
 
 .tab {
@@ -1367,17 +1348,6 @@ body.admin {
 
 .admin-main .card {
   min-height: 70vh;
-}
-
-.admin-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.admin-head h1 {
-  margin: 0;
 }
 
 .stat b small {
@@ -3034,7 +3004,7 @@ td select {
   min-width: 0;
 }
 
-#detail dd,#detail li,#detail h2,.comment,.timeline li {
+#detail dd,#detail li,#detail h2,.timeline li {
   overflow-wrap: anywhere;
 }
 
@@ -3044,16 +3014,6 @@ td select {
 
 #detail .row {
   flex-wrap: wrap;
-}
-
-#uploadForm input[type=file],#commentForm input,#commentForm textarea {
-  flex: 1 1 200px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-#uploadForm button,#commentForm button {
-  flex: 0 0 auto;
 }
 
 .flow {
@@ -3068,15 +3028,6 @@ td select {
 @media(max-width:720px) {
   .modal-box {
     padding: 18px 16px 24px;
-  }
-  #uploadForm input[type=file] {
-    flex-basis: 100%;
-  }
-  #uploadForm button,#commentForm button {
-    width: 100%;
-  }
-  #commentForm input,#commentForm textarea {
-    flex-basis: 100%;
   }
   .actions>button {
     flex: 1 1 100%;
@@ -3187,7 +3138,7 @@ td select {
 
 
 /* =====================================================================
-หลังบ้าน: เมนูซ้ายย่อ/ขยายได้ + แถบหัวหน้าจอ + การ์ดมีไอคอน + กิจกรรมล่าสุด
+หลังบ้าน: เมนูซ้ายย่อ/ขยายได้ + แถบหัวหน้าจอ + การ์ดมีไอคอน
 ===================================================================== */
 .admin-shell {
   --side-w: 240px;
@@ -3410,7 +3361,7 @@ td select {
 }
 
 
-/* ภาพรวม: กิจกรรมล่าสุด + แถบข้าง */
+/* ภาพรวม: เนื้อหาหลัก + แถบข้าง */
 .ov-grid {
   display: grid;
   grid-template-columns: minmax(0,2fr) minmax(0,1fr);
@@ -3430,73 +3381,6 @@ td select {
   .ov-grid {
     grid-template-columns: minmax(0,1fr);
   }
-}
-
-.act-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.act {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-.act:last-child {
-  border-bottom: 0;
-}
-
-.act-ico {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border-radius: var(--r);
-  display: grid;
-  place-items: center;
-  background: var(--tint);
-  color: var(--primary);
-}
-
-.act-ico svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.act-ico.bad {
-  background: #fbe3e0;
-  color: #9b2318;
-}
-
-.act-ico.deny {
-  background: #fdf1d6;
-  color: #7a4e00;
-}
-
-.act-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.35;
-}
-
-.act-main .muted {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.act time {
-  flex: none;
-  white-space: nowrap;
 }
 
 
@@ -3586,19 +3470,9 @@ html[data-theme="dark"] .st-urgent .ico {
   color: #f2a666;
 }
 
-html[data-theme="dark"] .stat .ico,html[data-theme="dark"] .act-ico {
+html[data-theme="dark"] .stat .ico {
   background: #1f3437;
   color: #79cfca;
-}
-
-html[data-theme="dark"] .act-ico.bad {
-  background: #3a1d1a;
-  color: #f19a91;
-}
-
-html[data-theme="dark"] .act-ico.deny {
-  background: #33290f;
-  color: #e8c46b;
 }
 
 html[data-theme="dark"] button.ghost,html[data-theme="dark"] .btn.ghost,html[data-theme="dark"] button.export,html[data-theme="dark"] .tab {
@@ -3791,9 +3665,6 @@ html[data-theme="dark"] h1,html[data-theme="dark"] h2,html[data-theme="dark"] h3
   }
   .ov-grid {
     gap: 24px;
-  }
-  .act time {
-    display: none;
   }
 }
 

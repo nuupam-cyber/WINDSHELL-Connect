@@ -1,6 +1,6 @@
 // scripts/seed-staff.js — สคริปต์เสริม: สร้างเฉพาะบัญชีเจ้าหน้าที่ในฐานข้อมูลที่มีอยู่แล้ว
 // รหัสผ่านอ่านจาก Environment (SEED_PASSWORD) ไม่ฝังไว้ในโค้ด
-// สร้างเฉพาะบัญชีเจ้าหน้าที่ (ไม่รัน schema.sql / v2-v5.sql จึงไม่กระทบข้อมูลเดิม)
+// สร้างเฉพาะบัญชีเจ้าหน้าที่ (ไม่รัน schema.sql / v2-v6.sql จึงไม่กระทบข้อมูลเดิม)
 //
 // วิธีใช้ (รันจากโฟลเดอร์ repair-system):
 //   Windows PowerShell:  $env:SEED_PASSWORD='รหัสผ่านที่คุณตั้ง'; node scripts/seed-staff.js
@@ -8,12 +8,8 @@
 //
 // บัญชีที่มีอยู่แล้ว (username ซ้ำ) จะถูกข้าม ไม่ถูกเขียนทับ
 
-try { require('dotenv').config(); } catch (e) {}
-
-let bcrypt;
-try { bcrypt = require('bcrypt'); }
-catch (e) { bcrypt = require('bcryptjs'); }
-
+require('dotenv').config();
+const bcrypt = require('bcrypt');
 const db = require('../src/db');
 
 const PASSWORD = process.env.SEED_PASSWORD;

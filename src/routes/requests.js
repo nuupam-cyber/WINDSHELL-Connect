@@ -15,37 +15,29 @@
 const crypto = require('crypto');
 const path = require('path');
 const { Router } = require('express');
-const multer = require('multer');
 const db = require('../db');
 const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
-const { upload, detectType } = require('../middleware/upload');
+const { uploadOne, uploadMany, detectType } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId, canView, inScope, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require('../services/access');
 
 const { withTransaction } = db;
 const router = Router();
 
-// (ปัจจุบันตัวไฟล์ถูกบันทึกลงฐานข้อมูล ตาราง attachments คอลัมน์ data ไม่ได้เขียนลงดิสก์แล้ว)
-// createUpload: รับไฟล์จากช่อง "files" ได้สูงสุด 3 ไฟล์ ไฟล์ละไม่เกิน 5 MB
-// แจ้งซ่อมพร้อมแนบไฟล์ในคำขอเดียว (สูงสุด 3 ไฟล์) ไฟล์เก็บในหน่วยความจำก่อน ตรวจแล้วค่อยเขียนลงดิสก์
-const MAX_FILE_SIZE = Number(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024;
-const MAX_CREATE_FILES = 3;
-const createUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE, files: MAX_CREATE_FILES },
-}).array('files', MAX_CREATE_FILES);
-// parseCreateUpload: แปลง error ของ multer เป็นข้อความภาษาไทยที่ผู้ใช้เข้าใจ (413 ไฟล์ใหญ่เกิน, 400 ไฟล์เกินจำนวน)
-function parseCreateUpload(req, res, next) {
-  createUpload(req, res, (err) => {
+// logUploadErrors: ห่อ middleware รับไฟล์ ถ้า multer ปฏิเสธ (เช่น ใหญ่เกิน 5 MB, เกิน 3 ไฟล์)
+// ให้บันทึก Log failure ก่อน แล้วส่ง error ต่อให้ errorHandler ตอบข้อความภาษาไทย
+const logUploadErrors = (receive) => (req, res, next) => {
+  receive(req, res, async (err) => {
     if (!err) return next();
-    if (err.code === 'LIMIT_FILE_SIZE') return next(new HttpError(413, 'ไฟล์ใหญ่เกินกำหนด'));
-    if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return next(new HttpError(400, `แนบได้สูงสุด ${MAX_CREATE_FILES} ไฟล์`));
-    }
+    await audit(req, {
+      eventType: 'attachment_upload', resourceType: 'repair_request',
+      resourceId: Number(req.params.id) || null, result: 'failure', detail: err.code || 'upload error',
+    });
     next(err);
   });
-}
+};
+
 // งานของฝ่ายนี้ต้องแนบรูปเสมอ (ฝ่ายอื่นแนบหรือไม่ก็ได้)
 const PHOTO_REQUIRED_DEPARTMENT = 'ช่างอาคาร';
 
@@ -70,7 +62,6 @@ const TRANSITIONS = {
 
 // JOIN ตารางที่เกี่ยวข้อง: ประเภทงาน, ห้อง หรือพื้นที่ส่วนกลาง, ผู้แจ้ง, ช่าง
 // LEFT JOIN เพราะบางคอลัมน์อาจว่าง เช่น ยังไม่มีช่าง หรือแจ้งพื้นที่ส่วนกลางจึงไม่มีห้อง
-// คำสั่ง SELECT กลางที่รวมชื่อประเภท สถานที่ และชื่อผู้เกี่ยวข้องไว้ให้แสดงผล
 const BASE = `
   SELECT r.id, r.title, r.description, r.status, r.priority,
          r.requester_id, r.department_id, r.technician_id,
@@ -100,7 +91,6 @@ async function findTechnician(client, techId, departmentId) {
   return t.id;
 }
 
-// รายการที่มองเห็นได้ตามสิทธิ์
 // GET /api/requests — รายการคำร้อง กรองตามสิทธิ์ใน SQL เลย (ข้อมูลที่ไม่มีสิทธิ์ไม่ถูกส่งออกจาก server)
 // มีหลายสิทธิ์ก็รวมด้วย OR เช่น หัวหน้าฝ่ายที่แจ้งเรื่องเองด้วย เห็นทั้งเรื่องของฝ่ายและเรื่องของตัวเอง
 // push(): เพิ่มค่าลง params แล้วคืน $1, $2 ... เพื่อใช้ Parameterized Query
@@ -125,7 +115,6 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
-// รายชื่อช่างในฝ่ายของผู้มอบหมายงาน
 // GET /api/requests/technicians — รายชื่อช่างในฝ่ายตัวเอง ใช้ตอนหัวหน้าฝ่ายเลือกผู้รับผิดชอบ
 router.get('/technicians', requirePermission('request.assign'), async (req, res) => {
   const { rows } = await db.query(
@@ -137,11 +126,14 @@ router.get('/technicians', requirePermission('request.assign'), async (req, res)
   res.json(rows);
 });
 
-// ตัวเลือกสำหรับฟอร์มแจ้งซ่อม ลูกบ้านไม่ต้องพิมพ์เอง
 // GET /api/requests/options — ข้อมูลสำหรับฟอร์มแจ้งเรื่อง: ประเภทงาน, พื้นที่ส่วนกลาง, ห้องของผู้ใช้
 router.get('/options', requirePermission('request.create'), async (req, res) => {
+  // needs_photo = ประเภทงานของฝ่ายช่างอาคาร หน้าเว็บใช้บังคับแนบรูป (server ตรวจซ้ำตอนส่งคำร้อง)
   const [categories, areas] = await Promise.all([
-        db.query('SELECT id, name, requires_detail FROM issue_categories WHERE is_active ORDER BY id'),
+    db.query(
+      `SELECT c.id, c.name, c.requires_detail, (d.name = $1) AS needs_photo
+       FROM issue_categories c JOIN departments d ON d.id = c.department_id
+       WHERE c.is_active ORDER BY c.id`, [PHOTO_REQUIRED_DEPARTMENT]),
     db.query('SELECT id, name FROM common_areas WHERE is_active ORDER BY id'),
   ]);
   const { rows: [unit] } = req.user.unit_id
@@ -150,10 +142,9 @@ router.get('/options', requirePermission('request.create'), async (req, res) => 
   res.json({ categories: categories.rows, commonAreas: areas.rows, unit: unit ?? null });
 });
 
-// แจ้งซ่อม: ตรวจทุกค่าจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาตรงๆ
 // POST /api/requests — แจ้งเรื่องใหม่ (สิทธิ์ request.create) รับเป็น multipart/form-data เพราะแนบไฟล์มาด้วย
 // ขั้นตอน: ตรวจข้อมูลทุกช่อง → ตรวจไฟล์ → หาสถานที่ → บันทึกทั้งหมดใน Transaction เดียว → Log
-router.post('/', requirePermission('request.create'), parseCreateUpload, async (req, res) => {
+router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany), async (req, res) => {
   const { user } = req;
   const b = req.body;
 
@@ -164,7 +155,7 @@ router.post('/', requirePermission('request.create'), parseCreateUpload, async (
   if (!LOCATION_TYPES.includes(b.location_type)) throw new HttpError(400, 'กรุณาเลือกสถานที่');
   const description = typeof b.description === 'string' ? (b.description.trim().slice(0, 1000) || null) : null;
 
-    const { rows: [cat] } = await db.query(
+  const { rows: [cat] } = await db.query(
     'SELECT id, name, department_id, requires_detail FROM issue_categories WHERE id = $1 AND is_active', [categoryId]);
   if (!cat) throw new HttpError(400, 'ประเภทงานไม่ถูกต้อง');
   if (cat.requires_detail && !description) throw new HttpError(400, 'ประเภทนี้ต้องกรอกรายละเอียด');
@@ -235,7 +226,6 @@ router.post('/', requirePermission('request.create'), parseCreateUpload, async (
   res.status(201).json(created);
 });
 
-// สถิติสำหรับแดชบอร์ด ใช้ขอบเขตข้อมูลเดียวกับรายการ
 // GET /api/requests/stats — ตัวเลขสำหรับแดชบอร์ด (สิทธิ์ dashboard.view)
 // ใช้ขอบเขตข้อมูลเดียวกับรายการ: หัวหน้าฝ่ายเห็นเฉพาะฝ่ายตน ช่างเห็นเฉพาะงานตน
 router.get('/stats', requirePermission('dashboard.view'), async (req, res) => {
@@ -288,7 +278,6 @@ router.get('/stats', requirePermission('dashboard.view'), async (req, res) => {
   });
 });
 
-// รายละเอียด พร้อมประวัติสถานะและไฟล์แนบ
 // GET /api/requests/:id — รายละเอียดเรื่อง + ประวัติสถานะ + รายการไฟล์แนบ
 // ไม่มีสิทธิ์ดู → ตอบ 404 (ไม่บอกว่ามีเรื่องนี้อยู่) และบันทึก Log access_denied
 router.get('/:id', async (req, res) => {
@@ -316,23 +305,9 @@ router.get('/:id', async (req, res) => {
   res.json({ ...r, history: history.rows, attachments: files });
 });
 
-// uploadFile: รับไฟล์ 1 ไฟล์จากช่อง "file" ถ้า multer ปฏิเสธ (เช่น ใหญ่เกิน) ให้บันทึก Log failure ก่อนส่ง error ต่อ
-function uploadFile(req, res, next) {
-  upload.single('file')(req, res, async (err) => {
-    if (err) {
-      await audit(req, {
-        eventType: 'attachment_upload', resourceType: 'repair_request',
-        resourceId: Number(req.params.id) || null, result: 'failure', detail: err.code || 'upload error',
-      });
-      return next(err);
-    }
-    next();
-  });
-}
-
 // POST /api/requests/:id/attachments — แนบไฟล์เพิ่มในเรื่องที่มีอยู่
 // ด่านตรวจ: สิทธิ์ attachment.upload → ขนาดไฟล์ (multer) → ต้องดูเรื่องนี้ได้ → ชนิดไฟล์จากเนื้อไฟล์ → บันทึก + Log
-router.post('/:id/attachments', requirePermission('attachment.upload'), uploadFile, async (req, res) => {
+router.post('/:id/attachments', requirePermission('attachment.upload'), logUploadErrors(uploadOne), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [r] } = await db.query('SELECT * FROM repair_requests WHERE id = $1', [id]);
   if (!r || !canView(req.user, req.permissions, r)) {
@@ -421,7 +396,6 @@ for (const [action, rule] of Object.entries(TRANSITIONS)) {
     (req, res) => runTransition(req, res, action));
 }
 
-// ลบเรื่องถาวร: เฉพาะเจ้าของเรื่อง และยังไม่ถูกมอบหมายงาน (ประวัติ ไฟล์แนบ ความคิดเห็น ลบตามด้วย CASCADE)
 // DELETE /api/requests/:id — ตรวจ: สิทธิ์ request.cancel.own → ต้องเป็นผู้แจ้งเอง → สถานะยัง pending และยังไม่มีช่าง
 // ประวัติสถานะและไฟล์แนบถูกลบตามอัตโนมัติด้วย ON DELETE CASCADE ในฐานข้อมูล
 router.delete('/:id', requirePermission('request.cancel.own'), async (req, res) => {

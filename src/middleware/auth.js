@@ -23,7 +23,7 @@ async function loadUser(userId) {
   if (hit && hit.exp > Date.now()) return hit.val;
 
   const { rows } = await db.query(
-    `SELECT u.id, u.username, u.name, u.role_id, u.department_id, u.unit_id, u.is_active, r.name AS role,
+    `SELECT u.id, u.username, u.name, u.position, u.role_id, u.department_id, u.unit_id, u.is_active, r.name AS role,
             COALESCE((SELECT array_agg(p.name) FROM role_permissions rp
                       JOIN permissions p ON p.id = rp.permission_id
                       WHERE rp.role_id = u.role_id), '{}') AS perms
@@ -75,7 +75,8 @@ function requirePermission(name) {
   };
 }
 
-// invalidateUser: ล้าง cache ของผู้ใช้คนหนึ่ง เรียกหลังแก้ข้อมูล/Role ของผู้ใช้ ให้มีผลทันที
-const invalidateUser = (id) => cache.delete(id);
+// invalidateUser(id): ล้าง cache ของผู้ใช้คนหนึ่ง เรียกหลังแก้ข้อมูล/Role ของผู้ใช้ ให้มีผลทันที
+// invalidateUser(): ล้างทั้งหมด เรียกหลังเปลี่ยน ACL เพราะกระทบผู้ใช้ทุกคนใน Role นั้น
+const invalidateUser = (id) => (id === undefined ? cache.clear() : cache.delete(id));
 
 module.exports = { authenticate, requirePermission, invalidateUser };

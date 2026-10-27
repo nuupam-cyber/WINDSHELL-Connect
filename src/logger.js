@@ -5,7 +5,7 @@
 // =====================================================================
 const db = require('./db');
 
-// writeLog: เขียน Log หนึ่งแถว (ใช้ตรงๆ ตอนยังไม่มี req.user เช่น ล็อกอินไม่สำเร็จ)
+// writeLog: เขียน Log หนึ่งแถว ใช้ภายในไฟล์นี้ผ่าน audit()
 async function writeLog({ userId = null, usernameAttempted = null, eventType, resourceType = null,
   resourceId = null, result, ip = null, detail = null }) {
   await db.query(
@@ -32,4 +32,4 @@ function deny(req, resourceType, resourceId, detail) {
   return audit(req, { eventType: 'access_denied', resourceType, resourceId, result: 'denied', detail });
 }
 
-module.exports = { writeLog, audit, deny };
+module.exports = { audit, deny };

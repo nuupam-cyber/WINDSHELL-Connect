@@ -5,7 +5,7 @@ Node.js + Express + PostgreSQL · Session (เก็บใน PostgreSQL) · RBA
 ## ติดตั้งและเริ่มใช้งาน
 1. `npm install`
 2. คัดลอก `.env.example` เป็น `.env` แล้วตั้ง `DATABASE_URL` และ `SESSION_SECRET`
-3. `npm run db:setup` — สร้างตาราง (`db/schema.sql`, `v2`–`v5`) ข้อมูลตัวอย่าง และบัญชีทดสอบ (รันซ้ำได้)
+3. `npm run db:setup` — สร้างตาราง (`db/schema.sql`, `v2`–`v6`) ข้อมูลตัวอย่าง และบัญชีทดสอบ (รันซ้ำได้)
 4. `npm start` แล้วเปิด http://localhost:3000 (หน้า Admin: `/admin`)
 
 บน Render: ตั้ง Environment `DATABASE_URL`, `SESSION_SECRET`, `NODE_ENV=production`

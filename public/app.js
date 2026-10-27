@@ -154,7 +154,6 @@ function showLoginForm(which) {
 $('#toRegister').onclick = (e) => { e.preventDefault(); showLoginForm('register'); };
 $('#toLogin').onclick = (e) => { e.preventDefault(); showLoginForm('login'); };
 
-
 // ส่งชื่อผู้ใช้/รหัสผ่านไป /api/auth/login → สำเร็จแล้วดึง /api/auth/me มาเก็บใน me → วาดหน้าหลัก
 $('#loginForm').onsubmit = async (e) => {
   e.preventDefault();
@@ -580,7 +579,7 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
       await api(`/requests/${id}/${b.dataset.act}`, { method: 'POST', body });
       await openDetail(id);
       loadRequests().catch(alertErr);
-            if (can('dashboard.view')) loadDashboard().catch(() => {});
+      if (can('dashboard.view')) loadDashboard().catch(() => {});
     } catch (err) {
       $('#detailMsg').textContent = err.message;
     }
@@ -590,8 +589,6 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
 }
 
 $('#closeModal').onclick = () => $('#modal').classList.add('hidden');
-
-// หน้าเข้าสู่ระบบ: ปล่อยให้เบราว์เซอร์เสนอชื่อผู้ใช้/รหัสผ่านที่จำไว้ได้ตามปกติ (autocomplete=username / current-password)
 
 // เริ่มต้นเมื่อเปิดหน้า: ถาม server ว่ายังล็อกอินอยู่ไหม (มี session) แล้ววาดหน้าตามผล
 async function init() {
