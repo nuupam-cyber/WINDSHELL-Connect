@@ -263,8 +263,8 @@ async function shrinkImage(file) {
   }
 }
 
-// ===== ไฟล์แนบในฟอร์มแจ้งเรื่อง: เลือกเพิ่มทีละครั้งหรือถ่ายรูป ลบไฟล์ที่เลือกผิดออกแล้วเลือกใหม่ได้ก่อนกดส่ง =====
-const MAX_FILES = 3;
+// ===== ไฟล์แนบในฟอร์มแจ้งเรื่อง: เลือกไฟล์หรือถ่ายรูปได้ 1 ไฟล์ ลบไฟล์ที่เลือกผิดออกแล้วเลือกใหม่ได้ก่อนกดส่ง =====
+const MAX_FILES = 1; // แต่ละคนแนบได้คนละ 1 ไฟล์ต่อเรื่อง (server ตรวจซ้ำ)
 const MAX_SIZE = 5 * 1024 * 1024;
 let picked = []; // ไฟล์ที่เลือกไว้ (ยังไม่ได้ส่ง)
 
@@ -278,7 +278,7 @@ function renderPicked() {
   const left = MAX_FILES - picked.length;
   $('#pickBtn').disabled = left === 0;
   $('#cameraBtn').disabled = left === 0;
-  $('#pickBtn').textContent = left === 0 ? 'แนบครบ 3 ไฟล์แล้ว' : picked.length ? `+ เลือกไฟล์เพิ่ม (อีก ${left})` : '+ เลือกไฟล์';
+  $('#pickBtn').textContent = left === 0 ? 'แนบครบแล้ว (ลบไฟล์เดิมก่อนถ้าจะเปลี่ยน)' : '+ เลือกไฟล์';
 }
 
 $('#pickBtn').onclick = () => $('#createFiles').click();
@@ -291,7 +291,7 @@ async function addPicked(e) {
   msg.textContent = '';
   const input = e.target;
   for (const original of input.files) {
-    if (picked.length >= MAX_FILES) { showMsg(msg, 'แนบได้สูงสุด 3 ไฟล์'); break; }
+    if (picked.length >= MAX_FILES) { showMsg(msg, 'แนบได้ 1 ไฟล์ ลบไฟล์เดิมก่อนถ้าจะเปลี่ยน'); break; }
     const f = await shrinkImage(original);
     if (f.size > MAX_SIZE) { showMsg(msg, `${f.name} ใหญ่เกิน 5 MB`); continue; }
     if (!picked.some((p) => p.name === f.name && p.size === f.size)) picked.push(f);
@@ -377,7 +377,7 @@ $('#createForm').onsubmit = async (e) => {
   body.append('location_type', f.location_type);
   body.append('description', f.description || '');
   if (f.location_type === 'common') body.append('common_area_id', f.common_area_id);
-  files.forEach((file) => body.append('files', file));
+  files.forEach((file) => body.append('file', file));
 
   try {
     await api('/requests', { method: 'POST', body });
@@ -579,7 +579,11 @@ async function openDetail(id) {
   const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
   const showWorkNote = acts.some(([x]) => x === 'complete');
   // แนบไฟล์หลังส่งเรื่อง: เฉพาะช่างผู้รับผิดชอบระหว่างดำเนินการ (ลูกบ้านแนบได้แค่ตอนแจ้งเรื่อง) server ตรวจซ้ำ
-  const canUpload = can('attachment.upload') && r.status === 'in_progress' && (mine('technician_id') || can('request.read.all'));
+  // แต่ละคนแนบได้คนละ 1 ไฟล์ต่อเรื่อง: ถ้าแนบไว้แล้วไม่แสดงช่องแนบ (ลบไฟล์เดิมก่อนแล้วช่องจะกลับมา)
+  const canUpload = can('attachment.upload') && r.status === 'in_progress' && (mine('technician_id') || can('request.read.all'))
+    && !(r.attachments || []).some((f) => f.uploaded_by === me.id);
+  // ป้ายบอกว่าใครแนบไฟล์: ผู้แจ้ง / ช่าง เทียบ id ผู้แนบกับผู้แจ้งและช่างของเรื่อง
+  const uploaderOf = (f) => `${esc(f.uploaded_by_name)} (${f.uploaded_by === r.requester_id ? 'ผู้แจ้ง' : f.uploaded_by === r.technician_id ? 'ช่าง' : 'เจ้าหน้าที่'})`;
   // งานช่างอาคาร: ต้องมีรูปที่ช่างแนบอย่างน้อย 1 ไฟล์ก่อนกดดำเนินการเสร็จ
   const hasWorkPhoto = (r.attachments || []).some((f) => f.uploaded_by === r.technician_id);
   $('#detail').innerHTML = `
@@ -597,7 +601,7 @@ async function openDetail(id) {
     <h3>ไฟล์แนบ</h3>
     <ul class="files" id="fileList">${(r.attachments || []).map((f) => `
       <li><a href="/api/attachments/${f.id}" target="_blank" rel="noopener"${f.mime_type.startsWith('image/') ? ` data-preview="${f.id}"` : ''}>${esc(f.original_name)}</a>
-        <span class="muted small">${fmtSize(f.size_bytes)}</span>
+        <span class="muted small">${fmtSize(f.size_bytes)} · แนบโดย ${uploaderOf(f)}</span>
         <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
         ${f.can_delete ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
     ${canUpload ? `<label class="file-up">แนบรูปผลงาน (JPG, PNG หรือ PDF ไม่เกิน 5 MB)${r.needs_photo ? ' <b>จำเป็นก่อนกดดำเนินการเสร็จ</b>' : ''}

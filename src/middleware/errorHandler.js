@@ -20,7 +20,7 @@ function errorHandler(err, req, res, next) {
   // error จาก multer (การอัปโหลดไฟล์) เช่น ไฟล์ใหญ่เกินกำหนด
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') return send(413, 'ไฟล์มีขนาดเกิน 5 MB');
-    if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') return send(400, 'แนบได้สูงสุด 3 ไฟล์');
+    if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') return send(400, 'แนบได้คนละ 1 ไฟล์ต่อเรื่อง');
     return send(400, 'อัปโหลดไฟล์ไม่สำเร็จ');
   }
   if (err.type === 'entity.parse.failed') return send(400, 'รูปแบบข้อมูล JSON ไม่ถูกต้อง');

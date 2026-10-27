@@ -1,12 +1,11 @@
 // =====================================================================
 // src/middleware/upload.js — ตั้งค่าการรับไฟล์อัปโหลด (ใช้ไลบรารี multer)
-// กติกา: รับเฉพาะ JPG, PNG, PDF ขนาดไม่เกิน 5 MB ต่อไฟล์ ตรวจทั้งหมดที่ฝั่ง server
+// กติกา: รับเฉพาะ JPG, PNG, PDF ขนาดไม่เกิน 5 MB ครั้งละ 1 ไฟล์ (แต่ละคนแนบได้คนละ 1 ไฟล์ต่อเรื่อง) ตรวจทั้งหมดที่ฝั่ง server
 // ไฟล์ถูกเก็บในหน่วยความจำก่อน ตรวจชนิดแล้วจึงบันทึกลงตาราง attachments คอลัมน์ data (ดู routes/requests.js)
 // =====================================================================
 const multer = require('multer');
 
 const MAX_FILE_SIZE = Number(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024;
-const MAX_CREATE_FILES = 3;
 
 // "Magic number" คือไบต์แรกๆ ของไฟล์ที่บอกชนิดจริง เช่น JPG ขึ้นต้นด้วย FF D8 FF, PDF ขึ้นต้นด้วย "%PDF"
 // แม้ผู้ใช้เปลี่ยนนามสกุล .exe เป็น .jpg ก็ตรวจจับได้ เพราะเนื้อไฟล์ไม่ตรง signature
@@ -25,9 +24,8 @@ function detectType(buffer) {
 }
 
 // limits.fileSize: ไฟล์ใหญ่เกินจะถูก multer ปฏิเสธทันที (error LIMIT_FILE_SIZE) ก่อนถึงโค้ดของเรา
+// files: 1 + .single('file'): ส่งมาเกิน 1 ไฟล์ถูกปฏิเสธ (LIMIT_FILE_COUNT / LIMIT_UNEXPECTED_FILE)
 const storage = multer.memoryStorage();
 const uploadOne = multer({ storage, limits: { fileSize: MAX_FILE_SIZE, files: 1 } }).single('file');
-const uploadMany = multer({ storage, limits: { fileSize: MAX_FILE_SIZE, files: MAX_CREATE_FILES } })
-  .array('files', MAX_CREATE_FILES);
 
-module.exports = { uploadOne, uploadMany, detectType };
+module.exports = { uploadOne, detectType };

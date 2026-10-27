@@ -18,7 +18,7 @@ const { Router } = require('express');
 const db = require('../db');
 const { audit, deny } = require('../logger');
 const { requirePermission } = require('../middleware/auth');
-const { uploadOne, uploadMany, detectType } = require('../middleware/upload');
+const { uploadOne, detectType } = require('../middleware/upload');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId, canView, inScope, canDeleteAttachment, STATUS_UNCHANGED_SQL } = require('../services/access');
 const { refCode } = require('../services/refs');
@@ -26,7 +26,7 @@ const { refCode } = require('../services/refs');
 const { withTransaction } = db;
 const router = Router();
 
-// logUploadErrors: ห่อ middleware รับไฟล์ ถ้า multer ปฏิเสธ (เช่น ใหญ่เกิน 5 MB, เกิน 3 ไฟล์)
+// logUploadErrors: ห่อ middleware รับไฟล์ ถ้า multer ปฏิเสธ (เช่น ใหญ่เกิน 5 MB, เกิน 1 ไฟล์)
 // ให้บันทึก Log failure ก่อน แล้วส่ง error ต่อให้ errorHandler ตอบข้อความภาษาไทย
 const logUploadErrors = (receive) => (req, res, next) => {
   receive(req, res, async (err) => {
@@ -177,7 +177,7 @@ router.get('/options', requirePermission('request.create'), async (req, res) => 
 
 // POST /api/requests — แจ้งเรื่องใหม่ (สิทธิ์ request.create) รับเป็น multipart/form-data เพราะแนบไฟล์มาด้วย
 // ขั้นตอน: ตรวจข้อมูลทุกช่อง → ตรวจไฟล์ → หาสถานที่ → บันทึกทั้งหมดใน Transaction เดียว → Log
-router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany), async (req, res) => {
+router.post('/', requirePermission('request.create'), logUploadErrors(uploadOne), async (req, res) => {
   const { user } = req;
   const b = req.body;
 
@@ -194,7 +194,8 @@ router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany
   if (cat.requires_detail && !description) throw new HttpError(400, 'ประเภทนี้ต้องกรอกรายละเอียด');
 
   // ตรวจไฟล์ฝั่ง Server: ต้องแนบถ้าเป็นงานช่างอาคาร และตรวจชนิดจากเนื้อไฟล์ทุกไฟล์ก่อนบันทึกอะไร
-  const files = req.files || [];
+  // ผู้แจ้งแนบได้ 1 ไฟล์ (ช่อง file) เก็บเป็นอาร์เรย์เพื่อใช้โค้ดตรวจ/บันทึกชุดเดียวกัน
+  const files = req.file ? [req.file] : [];
   const { rows: [dept] } = await db.query('SELECT name FROM departments WHERE id = $1', [cat.department_id]);
   if (dept && dept.name === PHOTO_REQUIRED_DEPARTMENT && files.length === 0) {
     throw new HttpError(400, 'งานประเภทนี้ต้องแนบรูปอย่างน้อย 1 ไฟล์ เพื่อให้ช่างเห็นปัญหา');
@@ -328,8 +329,10 @@ router.get('/:id', async (req, res) => {
        WHERE h.request_id = $1 ORDER BY h.changed_at, h.id`, [id]),
     db.query(
       `SELECT a.id, a.original_name, a.mime_type, a.size_bytes, a.created_at, a.uploaded_by,
+              u.name AS uploaded_by_name,
               ${STATUS_UNCHANGED_SQL} AS status_unchanged
-       FROM attachments a WHERE a.request_id = $1 ORDER BY a.id`, [id]),
+       FROM attachments a JOIN users u ON u.id = a.uploaded_by
+       WHERE a.request_id = $1 ORDER BY a.id`, [id]),
   ]);
   // can_delete: server คำนวณให้ว่าผู้ใช้ลบไฟล์ไหนได้ หน้าเว็บแค่เอาไปซ่อน/แสดงปุ่ม "ลบ"
   const files = attachments.rows.map(({ status_unchanged, ...f }) => ({
@@ -341,7 +344,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/requests/:id/attachments — ช่างแนบรูปผลงานระหว่างดำเนินการ (ก่อนกด "ดำเนินการเสร็จ")
 // ลูกบ้านแนบได้เฉพาะตอนแจ้งเรื่อง (POST /api/requests) หลังส่งแล้วแนบเพิ่มไม่ได้
 // ด่านตรวจ: สิทธิ์ attachment.upload → ขนาดไฟล์ (multer) → ต้องดูเรื่องนี้ได้
-//   → ต้องเป็นช่างผู้รับผิดชอบและสถานะ in_progress → ชนิดไฟล์จากเนื้อไฟล์ → บันทึก + Log
+//   → ต้องเป็นช่างผู้รับผิดชอบและสถานะ in_progress → ยังไม่เคยแนบไฟล์ในเรื่องนี้ (คนละ 1 ไฟล์) → ชนิดไฟล์จากเนื้อไฟล์ → บันทึก + Log
 router.post('/:id/attachments', requirePermission('attachment.upload'), logUploadErrors(uploadOne), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [r] } = await db.query('SELECT * FROM repair_requests WHERE id = $1', [id]);
@@ -352,6 +355,13 @@ router.post('/:id/attachments', requirePermission('attachment.upload'), logUploa
   if (!inScope('technician', req.user, req.permissions, r) || r.status !== 'in_progress') {
     await deny(req, 'repair_request', id, `attachment upload: status=${r.status}`);
     throw new HttpError(403, 'แนบไฟล์ได้เฉพาะตอนแจ้งเรื่อง หรือช่างผู้รับผิดชอบระหว่างดำเนินการ (ก่อนกดดำเนินการเสร็จ)');
+  }
+  // แต่ละคนแนบได้คนละ 1 ไฟล์ต่อเรื่อง แนบผิดให้ลบไฟล์เดิมก่อนแล้วแนบใหม่
+  const { rows: [{ n: mine }] } = await db.query(
+    'SELECT COUNT(*)::int AS n FROM attachments WHERE request_id = $1 AND uploaded_by = $2', [id, req.user.id]);
+  if (mine) {
+    await audit(req, { eventType: 'attachment_upload', resourceType: 'repair_request', resourceId: id, result: 'failure', detail: 'one file per user' });
+    throw new HttpError(409, 'แนบได้คนละ 1 ไฟล์ต่อเรื่อง หากแนบผิดให้ลบไฟล์เดิมก่อน');
   }
   if (!req.file) throw new HttpError(400, 'กรุณาเลือกไฟล์');
 
