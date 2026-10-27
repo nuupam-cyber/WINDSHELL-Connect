@@ -80,8 +80,20 @@ const run = async (fn, after) => {
 
 const views = { overview: renderOverview, users: renderUsers, roles: renderRoles, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
 
+const PAGE = {
+  overview: ['ภาพรวมระบบ', 'สรุปการใช้งานของระบบ'],
+  users: ['ผู้ใช้', 'เพิ่ม แก้ไข และจัดกลุ่มบัญชีผู้ใช้'],
+  roles: ['Role', 'บทบาทที่ใช้กำหนดสิทธิ์ในระบบ'],
+  acl: ['สิทธิ์การใช้งาน (ACL)', 'กำหนดว่าแต่ละบทบาททำอะไรได้บ้าง'],
+  categories: ['ประเภทงาน', 'ประเภทงานซ่อมและฝ่ายที่รับผิดชอบ'],
+  property: ['ห้องและพื้นที่', 'ห้องพัก สัญญา และพื้นที่ส่วนกลาง'],
+  logs: ['Log การใช้งาน', 'ประวัติการใช้งานและความพยายามเข้าถึงระบบ'],
+};
 function openTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  $('#pageTitle').textContent = PAGE[name][0];
+  $('#pageSub').textContent = PAGE[name][1];
+  document.title = `${PAGE[name][0]} | จัดการระบบ`;
   $('#content').onclick = null;
   $('#content').onchange = null;
   views[name]().catch((e) => { $('#content').innerHTML = `<p class="error">${esc(e.message)}</p>`; });
@@ -93,6 +105,39 @@ $('#logoutBtn').onclick = async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.href = '/';
 };
+
+// ===== เมนูซ้ายย่อ/ขยาย + โหมดมืด + ข้อมูลผู้ใช้บนแถบหัว =====
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* ไม่เป็นไร */ } };
+
+function setSide(collapsed) {
+  document.querySelector('.admin-shell').classList.toggle('collapsed', collapsed);
+  const b = $('#sideToggle');
+  b.setAttribute('aria-expanded', String(!collapsed));
+  b.title = collapsed ? 'ขยายเมนู' : 'ย่อเมนู';
+  lsSet('wc-side', collapsed ? '1' : '0');
+}
+$('#sideToggle').onclick = () => setSide(!document.querySelector('.admin-shell').classList.contains('collapsed'));
+if (lsGet('wc-side') === '1') setSide(true);
+
+const ICON_MOON = '<svg class="i" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const ICON_SUN = '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+function paintTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  $('#themeBtn').innerHTML = dark ? ICON_SUN : ICON_MOON;
+  $('#themeBtn').setAttribute('aria-pressed', String(dark));
+}
+$('#themeBtn').onclick = () => {
+  const dark = document.documentElement.getAttribute('data-theme') !== 'dark';
+  if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  lsSet('wc-theme', dark ? 'dark' : 'light');
+  paintTheme();
+};
+paintTheme();
+
+api('/auth/me').then((m) => { $('#meName').textContent = m.name; $('#meBtn').title = `บัญชีของฉัน (${m.name})`; }).catch(() => {});
+api('/notifications').then((n) => { if (n && n.unread > 0) $('#bellDot').classList.remove('hidden'); }).catch(() => {});
 
 // ===== ภาพรวม =====
 function exportCsv(rows, dir = []) {
@@ -115,6 +160,12 @@ function exportCsv(rows, dir = []) {
   URL.revokeObjectURL(a.href);
 }
 
+const IC = {
+  users: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
+  wrench: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/></svg>',
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  alert: '<svg viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>',
+};
 async function renderOverview() {
   const [st, users, roles] = await Promise.all([api('/requests/stats'), api('/admin/users'), api('/admin/roles')]);
   const n = (s) => st.byStatus.find((x) => x.status === s)?.n ?? 0;
@@ -124,32 +175,31 @@ async function renderOverview() {
   const perRole = {};
   users.forEach((u) => { const k = roleName[u.role_id] || '-'; perRole[k] = (perRole[k] || 0) + 1; });
   const maxR = Math.max(1, ...Object.values(perRole));
-  const card = (v, l, c = '') => `<div class="stat ${c}"><b>${v}</b><span>${l}</span></div>`;
+  const card = (icon, v, l, c = '') =>
+    `<div class="stat ${c}"><span class="ico" aria-hidden="true">${IC[icon]}</span><b>${v}</b><span>${l}</span></div>`;
 
   $('#content').innerHTML = `
-    <h2>ภาพรวมระบบ</h2>
     <div class="stat-grid">
-      ${card(`${active}<small>/${users.length}</small>`, 'ผู้ใช้ที่เปิดใช้งาน')}
-      ${card(total, 'เรื่องแจ้งซ่อมทั้งหมด')}
-      ${card(n('pending'), 'รอพิจารณา', 'st-open')}
-      ${card(st.urgentOpen, 'ด่วนที่ยังค้าง', 'st-urgent')}
+      ${card('users', `${active}<small>/${users.length}</small>`, 'ผู้ใช้ที่เปิดใช้งาน')}
+      ${card('wrench', total, 'เรื่องแจ้งซ่อมทั้งหมด')}
+      ${card('clock', n('pending'), 'รอพิจารณา', 'st-open')}
+      ${card('alert', st.urgentOpen, 'ด่วนที่ยังค้าง', 'st-urgent')}
     </div>
-    <div class="dash-cols">
-      <div>
+    <div class="ov-grid">
+      <section>
         <h3>ผู้ใช้แยกตาม Role</h3>
         ${Object.entries(perRole).map(([k, v]) => `<div class="bar-row"><span>${esc(k)}</span>
           <div class="bar-track"><div class="bar-fill" style="width:${(v / maxR) * 100}%"></div></div><b>${v}</b></div>`).join('')}
-      </div>
-      <div>
+      </section>
+      <section>
         <h3>ทางลัด</h3>
         <div class="quick">
-          <button data-go="users">+ เพิ่มผู้ใช้</button>
+          <button data-go="users">เพิ่มผู้ใช้</button>
           <button class="ghost" data-go="categories">จัดการประเภทงาน</button>
           <button class="ghost" data-go="property">จัดการห้อง/พื้นที่</button>
-          <button class="ghost" data-go="logs">ดู Log ล่าสุด</button>
           <button class="export" data-export>ส่งออกรายการแจ้งซ่อม (CSV)</button>
         </div>
-      </div>
+      </section>
     </div>`;
 
   $('#content').onclick = (e) => {
@@ -308,7 +358,6 @@ async function renderUsers() {
 async function renderRoles() {
   const roles = await api('/admin/roles');
   $('#content').innerHTML = `
-    <h2>Role</h2>
     <form id="roleForm" class="row wrap">
       <input name="name" placeholder="ชื่อ Role เช่น viewer" required>
       <input name="description" placeholder="คำอธิบาย">
@@ -448,7 +497,6 @@ async function renderCategories() {
     `<option value="${d.id}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
 
   $('#content').innerHTML = `
-    <h2>ประเภทงาน</h2>
     <form id="catForm" class="grid-form">
       <input name="name" placeholder="ชื่อประเภท" required>
       <select name="department_id" required>${deptOpts(null)}</select>
@@ -500,7 +548,6 @@ async function renderCategories() {
 // ===== Log =====
 async function renderLogs() {
   $('#content').innerHTML = `
-    <h2>Log การใช้งาน</h2>
     <form id="logForm" class="row wrap">
       <input type="date" name="from" title="ตั้งแต่วันที่">
       <input type="date" name="to" title="ถึงวันที่">
