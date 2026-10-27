@@ -184,9 +184,6 @@ dialog.dlg::backdrop{background:rgba(15,28,36,.5)}
 .dlg-err:empty{display:none}.dlg-err{margin:0 0 8px}
 .dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
 
-.plink{color:var(--ink);font-weight:500;text-decoration:underline dotted var(--primary);text-underline-offset:3px}
-.plink:hover{color:var(--primary)}
-.dlg-info{margin:0 0 6px}
 
 /* ประกาศ: เรียงตามความสำคัญ (กำลังเกิดขึ้น > กำลังจะมาถึง > สิ้นสุดแล้ว) */
 .an-list{display:grid;gap:10px;margin-top:8px}
@@ -243,3 +240,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
 button.send.urgent{background:#c2410c}button.send.urgent:hover{background:#9a3412}button.send.urgent::before{content:"⚠ "}
 .notice{background:#fdf1d6;border:1px solid #e3c98c;border-left:4px solid #c98a0b;border-radius:6px;color:#5c3b00;font-size:14px;padding:8px 12px;margin:0 0 12px}
 .notice a{color:#5c3b00;font-weight:600}
+
+/* เลือกผู้รับผิดชอบ: แสดงชื่อพร้อมตำแหน่ง */
+.pick{flex-basis:100%;border:1px solid var(--line);border-radius:6px;margin:0;padding:6px 10px 10px;min-width:0}
+.pick legend{font-size:13px;font-weight:500;color:var(--muted);padding:0 4px}
+.pick-item{display:flex;align-items:center;gap:10px;margin:0;padding:8px;border-radius:6px;cursor:pointer}
+.pick-item:hover{background:#f3f8f8}
+.pick-item input{width:auto;margin:0;accent-color:var(--primary)}
+.pick-item span{display:flex;flex-direction:column;line-height:1.3}.pick-item small{color:var(--muted);font-size:13px}
+.pick-item:has(input:checked){background:var(--tint);outline:1px solid var(--primary)}

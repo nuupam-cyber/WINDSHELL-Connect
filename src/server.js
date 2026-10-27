@@ -6,6 +6,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const db = require('./db');
+const { HttpError } = require('./middleware/errorHandler');
 const { authenticate, requirePermission } = require('./middleware/auth');
 
 const app = express();
@@ -69,8 +70,57 @@ const loadRoute = (routePath, apiEndpoint, ...middlewares) => {
 loadRoute('./routes/auth', '/api/auth');
 
 // ต้องล็อกอินก่อน
+
+// รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง ใช้แสดงผลในหน้าต่างๆ (ไม่รวมลูกบ้าน)
+app.get('/api/directory', authenticate, async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT u.id, u.name, u.position
+     FROM users u JOIN roles r ON r.id = u.role_id
+     WHERE u.is_active AND r.name <> 'resident'
+     ORDER BY u.name`);
+  res.json(rows);
+});
+
+// ประกาศ: ยกเลิกได้เฉพาะผู้ที่สร้างประกาศนั้นเท่านั้น
+// หาคอลัมน์ผู้สร้างจากตาราง announcements อัตโนมัติ (ชื่อคอลัมน์มาจากรายการคงที่ด้านล่างเท่านั้น)
+const OWNER_COLS = ['created_by', 'author_id', 'user_id', 'created_by_user_id', 'posted_by', 'owner_id'];
+async function annOwnerColumn() {
+  const { rows } = await db.query(
+    "SELECT column_name FROM information_schema.columns WHERE table_name = 'announcements'");
+  const names = rows.map((r) => r.column_name);
+  const col = OWNER_COLS.find((c) => names.includes(c)) || null;
+  if (!col) console.error('ไม่พบคอลัมน์ผู้สร้างประกาศ คอลัมน์ที่มี:', names.join(', '));
+  return col;
+}
+// เพิ่มฟิลด์ mine ในรายการประกาศ เพื่อให้หน้าเว็บรู้ว่าอันไหนเป็นของผู้ใช้
+app.get('/api/announcements', authenticate, async (req, res, next) => {
+  const col = await annOwnerColumn();
+  const send = res.json.bind(res);
+  if (col) {
+    res.json = (body) => {
+      if (!Array.isArray(body) || !body.length) return send(body);
+      db.query(`SELECT id, ${col} AS owner FROM announcements WHERE id = ANY($1)`, [body.map((x) => x.id)])
+        .then(({ rows }) => {
+          const owners = new Map(rows.map((r) => [String(r.id), String(r.owner)]));
+          send(body.map((x) => ({ ...x, mine: owners.get(String(x.id)) === String(req.user.id) })));
+        })
+        .catch(() => send(body));
+      return res;
+    };
+  }
+  next();
+});
+app.post('/api/announcements/:id/cancel', authenticate, async (req, res, next) => {
+  const col = await annOwnerColumn();
+  if (!col) throw new HttpError(500, 'ไม่สามารถตรวจสอบผู้สร้างประกาศได้');
+  const { rows: [a] } = await db.query(`SELECT ${col} AS owner FROM announcements WHERE id = $1`, [req.params.id]);
+  if (!a) throw new HttpError(404, 'ไม่พบประกาศ');
+  if (String(a.owner) !== String(req.user.id)) {
+    throw new HttpError(403, 'ยกเลิกได้เฉพาะผู้ที่สร้างประกาศนี้เท่านั้น');
+  }
+  next();
+});
 loadRoute('./routes/requests', '/api/requests', authenticate);
-loadRoute('./routes/directory', '/api/directory', authenticate);
 loadRoute('./routes/admin-extra', '/api/admin', authenticate); // ตั้งรหัสผ่านใหม่
 loadRoute('./routes/admin', '/api/admin', authenticate);
 loadRoute('./routes/announcements', '/api/announcements', authenticate);

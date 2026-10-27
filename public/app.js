@@ -6,7 +6,7 @@ const STATUS = {
 let me = null;
 let DIR = []; // รายชื่อเจ้าหน้าที่พร้อมตำแหน่ง
 const posByName = (n) => DIR.find((d) => d.name === n)?.position || '';
-const posById = (id) => DIR.find((d) => d.id === id)?.position || '';
+const posById = (id) => DIR.find((d) => Number(d.id) === Number(id))?.position || '';
 const person = (n) => (n ? esc(n) + (posByName(n) ? `<div class="muted small">${esc(posByName(n))}</div>` : '') : '—');
 const withPos = (n) => esc(n) + (posByName(n) ? ` <span class="muted">(${esc(posByName(n))})</span>` : '');
 const ROLE = {
@@ -381,6 +381,7 @@ $('#rows').onclick = (e) => {
 async function openDetail(id) {
   const r = await api(`/requests/${id}`);
   const techs = can('request.assign') && r.status === 'pending' ? await api('/requests/technicians') : [];
+  if (techs.length && !DIR.length) DIR = await api('/directory').catch(() => DIR);
   const mine = (field) => r[field] === me.id;
 
   const acts = [];
@@ -421,9 +422,10 @@ async function openDetail(id) {
 
     ${acts.length ? `
       <div class="actions">
+        ${techs.length ? `<fieldset class="pick"><legend>เลือกผู้รับผิดชอบ (ชื่อและตำแหน่ง)</legend>${techs.map((t) => `
+          <label class="pick-item"><input type="radio" name="tech" value="${t.id}">
+            <span><b>${esc(t.name)}</b><small>${posById(t.id) ? esc(posById(t.id)) : 'ยังไม่ระบุตำแหน่ง'}</small></span></label>`).join('')}</fieldset>` : ''}
         <textarea id="actNote" rows="2" placeholder="หมายเหตุ (จำเป็นเมื่อไม่อนุมัติ)"></textarea>
-        ${techs.length ? `<select id="techSel">${techs.map((t) =>
-          `<option value="${t.id}">${esc(t.name)}${posById(t.id) ? ' — ' + esc(posById(t.id)) : ''}</option>`).join('')}</select>` : ''}
         ${acts.map(([a, label, kind]) =>
           `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}
       </div>` : ''}
@@ -433,7 +435,11 @@ async function openDetail(id) {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const body = { note: $('#actNote')?.value.trim() || undefined };
-    if (b.dataset.act === 'assign') body.technician_id = Number($('#techSel')?.value);
+    if (b.dataset.act === 'assign') {
+      const t = document.querySelector('input[name=tech]:checked');
+      if (!t) { $('#detailMsg').textContent = 'กรุณาเลือกผู้รับผิดชอบก่อน'; return; }
+      body.technician_id = Number(t.value);
+    }
     try {
       await api(`/requests/${id}/${b.dataset.act}`, { method: 'POST', body });
       await openDetail(id);
@@ -624,7 +630,7 @@ async function loadAnnouncements() {
         ${a.detail ? `<p class="an-detail">${esc(a.detail)}</p>` : ''}
         <div class="an-foot">
           <span class="muted small">ประกาศโดย ${withPos(a.author)}</span>
-          ${can('announcement.manage')
+          ${can('announcement.manage') && (a.mine !== undefined ? a.mine : a.author === me.name)
             ? `<button class="ghost small cancel" data-ann-cancel="${a.id}">ยกเลิกประกาศ</button>` : ''}
         </div>
       </div>
