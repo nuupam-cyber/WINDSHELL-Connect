@@ -43,10 +43,13 @@ function renderShell() {
   $('#login').classList.toggle('hidden', !!me);
   $('#app').classList.toggle('hidden', !me);
   if (!me) return;
-  $('#userName').textContent = me.name;
+  const nm = String(me.name).match(/^(.*?)\s*\(([^()]+)\)\s*$/); // ชื่อ (ตำแหน่ง)
+  const shownName = nm ? nm[1] : me.name;
+  $('#userName').textContent = shownName;
   const [roleName, scope] = ROLE[me.role] || [me.role, ''];
-  $('#userRole').textContent = roleName;
-  $('#userRole').classList.toggle('hidden', roleName === me.name);
+  const sub = nm ? nm[2] : roleName;
+  $('#userRole').textContent = sub;
+  $('#userRole').classList.toggle('hidden', sub === shownName);
   $('#scopeNote').textContent = 'กำลังแสดง: ' + scope;
   document.querySelector('.work-grid').classList.toggle('solo', !can('request.create'));
   $('#adminLink').classList.toggle('hidden', !can('user.manage'));

@@ -30,6 +30,16 @@ const run = async (fn, after) => {
   if (after) after();
 };
 
+// ชื่อรูปแบบ "ชื่อ นามสกุล (ตำแหน่ง)" แยกเป็น [ชื่อ, ตำแหน่ง]
+function splitName(n) {
+  const m = String(n ?? '').match(/^(.*?)\s*\(([^()]+)\)\s*$/);
+  return m ? [m[1], m[2]] : [String(n ?? ''), ''];
+}
+const nameCell = (n) => {
+  const [a, b] = splitName(n);
+  return esc(a) + (b ? `<div class="muted small">${esc(b)}</div>` : '');
+};
+
 const views = { overview: renderOverview, users: renderUsers, roles: renderRoles, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
 
 function openTab(name) {
@@ -119,7 +129,8 @@ async function renderUsers() {
     <h2>เพิ่มผู้ใช้</h2>
     <form id="userForm" class="grid-form">
       <input name="username" placeholder="ชื่อผู้ใช้ (a-z 0-9 _ .)" required>
-      <input name="name" placeholder="ชื่อ-สกุล" required>
+      <input name="name" placeholder="ชื่อ-นามสกุลจริง" required>
+      <input name="position" placeholder="ตำแหน่ง/หน้าที่ เช่น ช่างไฟฟ้า">
       <input name="password" type="password" placeholder="รหัสผ่าน อย่างน้อย 8 ตัว" required>
       <select name="role_id" required>${roleOpts(null)}</select>
       <select name="department_id">${deptOpts(null)}</select>
@@ -132,15 +143,16 @@ async function renderUsers() {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ</th><th>Role</th><th>ฝ่าย</th><th>สถานะ</th><th></th></tr></thead>
+        <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-นามสกุล / ตำแหน่ง</th><th>Role</th><th>ฝ่าย</th><th>สถานะ</th><th></th></tr></thead>
         <tbody>${users.map((u) => `<tr>
           <td>${esc(u.username)}</td>
-          <td>${esc(u.name)}</td>
+          <td>${nameCell(u.name)}</td>
           <td><select data-field="role_id" data-id="${u.id}">${roleOpts(u.role_id)}</select></td>
           <td><select data-field="department_id" data-id="${u.id}">${deptOpts(u.department_id)}</select></td>
           <td><span class="badge ${u.is_active ? 's-done' : 's-cancelled'}">${u.is_active ? 'ใช้งาน' : 'ปิดแล้ว'}</span></td>
           <td><button class="ghost small" data-toggle="${u.id}" data-active="${u.is_active}">
             ${u.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button>
+            <button class="ghost small" data-rename="${u.id}" data-name="${esc(u.name)}">แก้ชื่อ</button>
             <button class="ghost small key" data-reset="${u.id}" data-name="${esc(u.username)}">ตั้งรหัสผ่านใหม่</button></td>
         </tr>`).join('')}</tbody>
       </table>
@@ -149,6 +161,8 @@ async function renderUsers() {
   $('#userForm').onsubmit = (e) => {
     e.preventDefault();
     const f = formData(e.target);
+    f.name = f.position ? `${f.name.trim()} (${f.position.trim()})` : f.name.trim();
+    delete f.position;
     run(() => api('/admin/users', { method: 'POST', body: {
       ...f, role_id: Number(f.role_id), department_id: nullable(f.department_id),
     } }), renderUsers);
@@ -170,6 +184,17 @@ async function renderUsers() {
   };
 
   $('#content').onclick = (e) => {
+    const rn = e.target.closest('[data-rename]');
+    if (rn) {
+      const [cur, pos] = splitName(rn.dataset.name);
+      const full = prompt('ชื่อ-นามสกุลจริง', cur);
+      if (full === null || !full.trim()) return;
+      const position = prompt('ตำแหน่ง/หน้าที่ (เว้นว่างถ้าไม่ระบุ)', pos);
+      if (position === null) return;
+      const name = position.trim() ? `${full.trim()} (${position.trim()})` : full.trim();
+      run(() => api(`/admin/users/${rn.dataset.rename}/name`, { method: 'PATCH', body: { name } }), renderUsers);
+      return;
+    }
     const r = e.target.closest('[data-reset]');
     if (r) {
       const pw = prompt(`ตั้งรหัสผ่านใหม่ให้ ${r.dataset.name} (อย่างน้อย 8 ตัวอักษร)`);
