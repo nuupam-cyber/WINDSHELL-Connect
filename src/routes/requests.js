@@ -70,7 +70,8 @@ const BASE = `
          COALESCE(un.unit_no, ca.name) AS location,
          ru.name AS requester_name,
          t.name  AS technician_name,
-         t.position AS technician_position
+         t.position AS technician_position,
+         (SELECT d.name FROM departments d WHERE d.id = r.department_id) = '${PHOTO_REQUIRED_DEPARTMENT}' AS needs_photo
   FROM repair_requests r
   JOIN issue_categories cat ON cat.id = r.category_id
   LEFT JOIN units un ON un.id = r.unit_id
@@ -337,14 +338,20 @@ router.get('/:id', async (req, res) => {
   res.json({ ...r, history: history.rows, attachments: files });
 });
 
-// POST /api/requests/:id/attachments — แนบไฟล์เพิ่มในเรื่องที่มีอยู่
-// ด่านตรวจ: สิทธิ์ attachment.upload → ขนาดไฟล์ (multer) → ต้องดูเรื่องนี้ได้ → ชนิดไฟล์จากเนื้อไฟล์ → บันทึก + Log
+// POST /api/requests/:id/attachments — ช่างแนบรูปผลงานระหว่างดำเนินการ (ก่อนกด "ดำเนินการเสร็จ")
+// ลูกบ้านแนบได้เฉพาะตอนแจ้งเรื่อง (POST /api/requests) หลังส่งแล้วแนบเพิ่มไม่ได้
+// ด่านตรวจ: สิทธิ์ attachment.upload → ขนาดไฟล์ (multer) → ต้องดูเรื่องนี้ได้
+//   → ต้องเป็นช่างผู้รับผิดชอบและสถานะ in_progress → ชนิดไฟล์จากเนื้อไฟล์ → บันทึก + Log
 router.post('/:id/attachments', requirePermission('attachment.upload'), logUploadErrors(uploadOne), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [r] } = await db.query('SELECT * FROM repair_requests WHERE id = $1', [id]);
   if (!r || !canView(req.user, req.permissions, r)) {
     if (r) await deny(req, 'repair_request', id, 'attachment upload');
     throw new HttpError(404, 'ไม่พบรายการ');
+  }
+  if (!inScope('technician', req.user, req.permissions, r) || r.status !== 'in_progress') {
+    await deny(req, 'repair_request', id, `attachment upload: status=${r.status}`);
+    throw new HttpError(403, 'แนบไฟล์ได้เฉพาะตอนแจ้งเรื่อง หรือช่างผู้รับผิดชอบระหว่างดำเนินการ (ก่อนกดดำเนินการเสร็จ)');
   }
   if (!req.file) throw new HttpError(400, 'กรุณาเลือกไฟล์');
 
@@ -394,6 +401,17 @@ async function runTransition(req, res, action) {
     // สถานะต้องตรงกับ from เช่น จะ start ได้ต้องเป็น assigned เท่านั้น ข้ามขั้นไม่ได้ (ตอบ 409)
     if (!rule.from.includes(r.status)) {
       throw new HttpError(409, `ไม่สามารถ ${action} ขณะสถานะเป็น ${r.status}`);
+    }
+    // งานฝ่ายช่างอาคาร: ช่างต้องแนบรูปผลงานอย่างน้อย 1 ไฟล์ก่อนกด "ดำเนินการเสร็จ"
+    if (action === 'complete') {
+      const { rows: [c] } = await client.query(
+        `SELECT (d.name = $2) AS needs_photo,
+                (SELECT COUNT(*)::int FROM attachments a WHERE a.request_id = $1 AND a.uploaded_by = $3) AS n
+         FROM departments d WHERE d.id = $4`,
+        [id, PHOTO_REQUIRED_DEPARTMENT, r.technician_id, r.department_id]);
+      if (c && c.needs_photo && !c.n) {
+        throw new HttpError(400, 'งานช่างอาคารต้องแนบรูปผลงานอย่างน้อย 1 ไฟล์ก่อนกดดำเนินการเสร็จ');
+      }
     }
 
     const technicianId = action === 'assign'

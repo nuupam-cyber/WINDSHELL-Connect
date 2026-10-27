@@ -546,6 +546,10 @@ async function openDetail(id) {
   // showNote = ช่องหมายเหตุตอนพิจารณา, showWorkNote = ช่องรายละเอียดงานที่ทำตอนช่างกดเสร็จ
   const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
   const showWorkNote = acts.some(([x]) => x === 'complete');
+  // แนบไฟล์หลังส่งเรื่อง: เฉพาะช่างผู้รับผิดชอบระหว่างดำเนินการ (ลูกบ้านแนบได้แค่ตอนแจ้งเรื่อง) server ตรวจซ้ำ
+  const canUpload = can('attachment.upload') && r.status === 'in_progress' && (mine('technician_id') || can('request.read.all'));
+  // งานช่างอาคาร: ต้องมีรูปที่ช่างแนบอย่างน้อย 1 ไฟล์ก่อนกดดำเนินการเสร็จ
+  const hasWorkPhoto = (r.attachments || []).some((f) => f.uploaded_by === r.technician_id);
   $('#detail').innerHTML = `
     <h2>${esc(r.title)} <span class="refno">${refOf(r)}</span></h2>
     <span class="badge s-${r.status}">${STATUS[r.status]}</span>
@@ -564,7 +568,7 @@ async function openDetail(id) {
         <span class="muted small">${fmtSize(f.size_bytes)}</span>
         <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
         ${f.can_delete ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
-    ${can('attachment.upload') && !(r.status === 'assigned' && mine('technician_id')) ? `<label class="file-up">แนบไฟล์ (JPG, PNG หรือ PDF ไม่เกิน 5 MB)
+    ${canUpload ? `<label class="file-up">แนบรูปผลงาน (JPG, PNG หรือ PDF ไม่เกิน 5 MB)${r.needs_photo ? ' <b>จำเป็นก่อนกดดำเนินการเสร็จ</b>' : ''}
       <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>` : ''}
 
     <h3>ประวัติการดำเนินการ</h3>
@@ -639,6 +643,10 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
     if (b.dataset.act === 'complete' && !body.note) {
       $('#detailMsg').textContent = 'กรุณากรอกรายละเอียดงานที่ทำก่อนกดดำเนินการเสร็จ';
       noteEl?.focus();
+      return;
+    }
+    if (b.dataset.act === 'complete' && r.needs_photo && !hasWorkPhoto) {
+      $('#detailMsg').textContent = 'งานช่างอาคารต้องแนบรูปผลงานอย่างน้อย 1 ไฟล์ก่อนกดดำเนินการเสร็จ';
       return;
     }
     if (b.dataset.act === 'reject' && !body.note) {
