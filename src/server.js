@@ -5,7 +5,7 @@ require('express-async-errors');
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const { authenticate } = require('./middleware/auth');
+const { authenticate, requirePermission } = require('./middleware/auth');
 
 const app = express();
 
@@ -33,6 +33,14 @@ app.use(session({
 
 // 4. ไฟล์ Static
 app.use(express.static(path.join(__dirname, '../public')));
+
+// หน้าจัดการระบบ: ไฟล์อยู่ใน private/ (ไม่เปิดให้ทุกคน) ต้องล็อกอินและมีสิทธิ์ user.manage
+app.get('/admin',
+  (req, res, next) => (req.session.userId ? next() : res.redirect('/')),
+  authenticate,
+  requirePermission('user.manage'),
+  (req, res) => res.sendFile(path.join(__dirname, '../private/admin.html'))
+);
 
 // 5. Safe-Load Routes (รับ middleware เพิ่มได้)
 const loadRoute = (routePath, apiEndpoint, ...middlewares) => {
