@@ -4,18 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>WINDSHELL Connect | WINDSHELL Naradhiwass</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='6' y='6' width='88' height='88' rx='22' fill='%234f46e5'/%3E%3Crect x='30' y='30' width='40' height='40' rx='8' fill='none' stroke='white' stroke-width='7'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6b6f'/%3E%3Cpath d='M5 11c4-4 8 4 12 0s5-3 10 0M5 17c4-4 8 4 12 0s5-3 10 0M5 23c4-4 8 4 12 0s5-3 10 0' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <section id="login">
-    <div class="bg-blobs"><span></span><span></span><span></span></div>
-
+    <div class="login-shell">
+    <aside class="login-brand">
+      <div class="logo"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 10c4-4 8 4 12 0s6-3 12 0M4 17c4-4 8 4 12 0s6-3 12 0M4 24c4-4 8 4 12 0s6-3 12 0"/></svg></div>
+      <div>
+        <h2>WINDSHELL Connect</h2>
+        <p>แจ้งซ่อม ติดตามงาน และรับประกาศจากนิติบุคคล<br>WINDSHELL Naradhiwas</p>
+      </div>
+    </aside>
+    <div class="login-forms">
     <form id="loginForm" class="card login-card">
-      <div class="logo"></div>
-      <p class="brand-eyebrow">WINDSHELL NARADHIWAS</p>
-      <h1>WINDSHELL Connect</h1>
-      <p class="muted">บริการลูกบ้านทุกเรื่องในที่เดียว</p>
+      <h1>เข้าสู่ระบบ</h1>
+      <p class="muted">ใช้บัญชีลูกบ้านหรือบัญชีเจ้าหน้าที่</p>
       <label>ชื่อผู้ใช้<input name="username" autocomplete="username" required></label>
       <label>รหัสผ่าน
         <span class="pw-wrap">
@@ -29,8 +36,6 @@
     </form>
 
     <form id="registerForm" class="card login-card hidden">
-      <div class="logo"></div>
-      <p class="brand-eyebrow">WINDSHELL NARADHIWAS</p>
       <h1>สมัครบัญชีลูกบ้าน</h1>
       <p class="muted">กรอกเลขที่สัญญาเพื่อยืนยันว่าคุณเป็นผู้เช่าหรือเจ้าของห้อง</p>
       <label>เลขที่สัญญา<input name="contract_no" placeholder="เช่น CT-A-102" required></label>
@@ -52,13 +57,15 @@
       <p id="registerError" class="error"></p>
       <p class="center"><a href="#" id="toLogin">มีบัญชีแล้ว? เข้าสู่ระบบ</a></p>
     </form>
+    </div>
+    </div>
   </section>
 
   <section id="app" class="hidden">
     <header class="topbar">
       <div class="brand">
-        <strong>WINDSHELL Connect</strong>
-        <span class="muted small">WINDSHELL Naradhiwass</span>
+        <span class="logo sm"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 10c4-4 8 4 12 0s6-3 12 0M4 17c4-4 8 4 12 0s6-3 12 0M4 24c4-4 8 4 12 0s6-3 12 0"/></svg></span>
+        <div><strong>WINDSHELL Connect</strong><span class="muted small">WINDSHELL Naradhiwass</span></div>
       </div>
       <div class="userbox">
                 <div class="notif">
@@ -84,6 +91,9 @@
     </header>
 
     <main class="container">
+      <div class="hello"><h1 id="hello"></h1><span class="muted">เรื่องที่คุณเกี่ยวข้อง</span></div>
+      <div id="summary" class="summary"></div>
+
       <div class="card ann-card">
         <div class="row between">
           <h2>ประกาศจากนิติบุคคล</h2>
@@ -128,24 +138,27 @@
         <div id="chartDaily" class="daily"></div>
       </div>
 
-      <div class="card form-card" data-perm="request.create">
+      <div class="work-grid">
+        <div>
+      <div class="card" data-perm="request.create">
         <h2>แจ้งเรื่องใหม่</h2>
         <form id="createForm">
           <label>ประเภทงาน
             <select name="category_id" id="categorySel" required></select>
           </label>
-          <label>ความเร่งด่วน
-            <select name="priority">
-              <option value="normal">ปกติ</option>
-              <option value="urgent">ด่วน (กระทบการอยู่อาศัย)</option>
-            </select>
-          </label>
-          <label>สถานที่
-            <select name="location_type" id="locationType">
-              <option value="unit">ภายในห้องของฉัน</option>
-              <option value="common">พื้นที่ส่วนกลาง</option>
-            </select>
-          </label>
+          <div class="label">ความเร่งด่วน
+            <div class="seg">
+              <label><input type="radio" name="priority" value="normal" checked><span>ปกติ</span></label>
+              <label><input type="radio" name="priority" value="urgent"><span>ด่วน</span></label>
+            </div>
+            <span class="muted small">เลือก “ด่วน” เมื่อกระทบการอยู่อาศัย เช่น น้ำรั่วหรือไฟดับ</span>
+          </div>
+          <div class="label" style="margin-top:12px">สถานที่
+            <div class="seg">
+              <label><input type="radio" name="location_type" value="unit" checked><span>ห้องของฉัน</span></label>
+              <label><input type="radio" name="location_type" value="common"><span>พื้นที่ส่วนกลาง</span></label>
+            </div>
+          </div>
           <div id="areaWrap" class="hidden">
             <label>เลือกพื้นที่ส่วนกลาง
               <select name="common_area_id" id="areaSel"></select>
@@ -160,10 +173,24 @@
         </form>
       </div>
 
+      <div class="card" data-perm="request.create">
+        <h2>หลังแจ้งเรื่องแล้วเกิดอะไรขึ้น</h2>
+        <ol class="steps">
+          <li>นิติบุคคลพิจารณาเรื่องและมอบหมายช่าง</li>
+          <li>ช่างเริ่มดำเนินการและปิดงานในระบบ</li>
+          <li>คุณตรวจงานแล้วกด “ยืนยันปิดเรื่อง”</li>
+        </ol>
+        <p class="muted small" style="margin:8px 0 0">ติดตามสถานะได้จากรายการทางขวา และกระดิ่งแจ้งเตือนด้านบน</p>
+      </div>
+        </div>
+        <div>
       <div class="card">
-        <div class="row between">
-          <h2>รายการแจ้งเรื่อง</h2>
-          <select id="statusFilter" class="narrow"></select>
+        <div class="row between wrap" style="margin-bottom:12px">
+          <h2 style="margin:0">รายการแจ้งเรื่อง</h2>
+          <div class="toolbar">
+            <input id="searchBox" type="search" placeholder="ค้นหาเลขที่ ประเภท สถานที่" aria-label="ค้นหา">
+            <select id="statusFilter" class="narrow" aria-label="กรองสถานะ"></select>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -175,11 +202,16 @@
         </div>
       </div>
 
+        </div>
+      </div>
+
       <footer class="site-footer">
         WINDSHELL Connect · ระบบบริการลูกบ้าน WINDSHELL Naradhiwass
       </footer>
     </main>
   </section>
+
+  <div id="toasts" aria-live="polite"></div>
 
   <div id="modal" class="modal hidden">
     <div class="card modal-box">

@@ -14,20 +14,32 @@ async function api(path, opts = {}) {
   }
   const res = await fetch('/api' + path, init);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+  if (res.status === 401 && me && path !== '/auth/login') {
+    me = null; renderShell(); toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง', 'error');
+  }
+  if (!res.ok) throw new Error(data.error || data.message || 'เกิดข้อผิดพลาด');
   return data;
 }
 const can = (p) => !!me && me.permissions.includes(p);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = (d) => new Date(d).toLocaleString('th-TH-u-ca-gregory', { dateStyle: 'medium', timeStyle: 'short' });
-const alertErr = (e) => alert(e.message);
+function toast(msg, kind = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+const alertErr = (e) => toast(e.message, 'error');
 
 function renderShell() {
   $('#login').classList.toggle('hidden', !!me);
   $('#app').classList.toggle('hidden', !me);
   if (!me) return;
   $('#userName').textContent = me.name;
+  $('#hello').textContent = 'สวัสดี ' + me.name;
+  document.querySelector('.work-grid').classList.toggle('solo', !can('request.create'));
   $('#adminLink').classList.toggle('hidden', !can('user.manage'));
   document.querySelectorAll('[data-perm]').forEach((el) =>
     el.classList.toggle('hidden', !can(el.dataset.perm)));
@@ -108,8 +120,10 @@ $('#categorySel').onchange = () => {
   $('#descLabel').textContent = needed ? 'รายละเอียด (จำเป็น) *' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)';
 };
 
-$('#locationType').onchange = () =>
-  $('#areaWrap').classList.toggle('hidden', $('#locationType').value !== 'common');
+$('#createForm').addEventListener('change', (e) => {
+  if (e.target.name === 'location_type')
+    $('#areaWrap').classList.toggle('hidden', e.target.value !== 'common');
+});
 
 $('#createForm').onsubmit = async (e) => {
   e.preventDefault();
@@ -136,6 +150,7 @@ $('#createForm').onsubmit = async (e) => {
     $('#areaWrap').classList.add('hidden');
     msg.className = 'success';
     msg.textContent = 'ส่งคำขอเรียบร้อยแล้ว';
+    toast('ส่งคำขอเรียบร้อยแล้ว');
     loadRequests().catch(alertErr);
   } catch (err) {
     showMsg(msg, err.message);
@@ -150,11 +165,32 @@ function showMsg(el, text) {
 // ===== รายการแจ้งซ่อม =====
 $('#statusFilter').innerHTML = '<option value="">ทุกสถานะ</option>' +
   Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-$('#statusFilter').onchange = () => loadRequests().catch(alertErr);
+let allRows = [];
+$('#statusFilter').onchange = () => renderRows();
+$('#searchBox').oninput = () => renderRows();
 
 async function loadRequests() {
+  allRows = await api('/requests');
+  renderSummary();
+  renderRows();
+}
+
+function renderSummary() {
+  const n = (...st) => allRows.filter((r) => st.includes(r.status)).length;
+  const cell = (v, l, c = '') => `<div class="sum ${c}"><b>${v}</b><span>${l}</span></div>`;
+  $('#summary').innerHTML =
+    cell(n('pending'), 'รอพิจารณา') +
+    cell(n('assigned', 'in_progress'), 'กำลังดำเนินการ', 'open') +
+    cell(n('done'), 'รอยืนยันปิดเรื่อง', 'wait') +
+    cell(n('closed'), 'ปิดเรื่องแล้ว', 'ok');
+}
+
+function renderRows() {
   const s = $('#statusFilter').value;
-  const rows = await api('/requests' + (s ? `?status=${s}` : ''));
+  const q = $('#searchBox').value.trim().toLowerCase();
+  const rows = allRows.filter((r) => (!s || r.status === s) && (!q ||
+    [`#${r.id}`, r.category, r.location, r.requester_name, r.technician_name]
+      .some((v) => String(v ?? '').toLowerCase().includes(q))));
   $('#rows').innerHTML = rows.length
     ? rows.map((r) => `<tr data-id="${r.id}">
         <td>#${r.id}</td>
@@ -165,7 +201,15 @@ async function loadRequests() {
         <td><span class="badge s-${r.status}">${STATUS[r.status]}</span></td>
         <td class="muted">${fmtDate(r.created_at)}</td>
       </tr>`).join('')
-    : '<tr><td colspan="7" class="empty">ยังไม่มีรายการ</td></tr>';
+    : `<tr><td colspan="7" class="empty">${allRows.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายการแจ้งเรื่อง'}</td></tr>`;
+}
+
+const FLOW = ['pending', 'assigned', 'in_progress', 'done', 'closed'];
+function progress(st) {
+  const i = FLOW.indexOf(st);
+  if (i < 0) return `<p class="muted">${st === 'rejected' ? 'เรื่องนี้ไม่ได้รับอนุมัติ' : 'เรื่องนี้ถูกยกเลิกแล้ว'}</p>`;
+  return `<ol class="flow">${FLOW.map((k, j) =>
+    `<li class="${j < i ? 'past' : j === i ? 'now' : ''}">${STATUS[k]}</li>`).join('')}</ol>`;
 }
 
 $('#rows').onclick = (e) => {
@@ -190,6 +234,7 @@ async function openDetail(id) {
   $('#detail').innerHTML = `
     <h2>#${r.id} ${esc(r.title)}</h2>
     <span class="badge s-${r.status}">${STATUS[r.status]}</span>
+    ${progress(r.status)}
     <dl class="info" style="margin-top:14px">
       <dt>ประเภท</dt><dd>${esc(r.category)} ${r.priority === 'urgent' ? '· ด่วน' : ''}</dd>
       <dt>สถานที่</dt><dd>${esc(r.location)}</dd>
@@ -358,7 +403,7 @@ async function loadComments(id) {
       e.target.reset();
       await render();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     }
   });
 }
@@ -396,7 +441,7 @@ $('#annList').onclick = async (e) => {
     await api(`/announcements/${b.dataset.annCancel}/cancel`, { method: 'POST' });
     await loadAnnouncements();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 };
 
