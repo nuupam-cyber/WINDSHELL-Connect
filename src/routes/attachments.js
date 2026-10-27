@@ -67,7 +67,7 @@ router.delete('/:id', async (req, res) => {
   if (!canDeleteAttachment(req.user, req.permissions, a)) {
     await deny(req, 'attachment', id, a.uploaded_by === req.user.id ? 'delete: status changed' : 'delete: not uploader');
     throw new HttpError(403, a.uploaded_by === req.user.id
-      ? 'ลบไม่ได้ เพราะสถานะงานเปลี่ยนไปแล้วหลังแนบไฟล์นี้'
+      ? 'ลบไม่ได้ เพราะสถานะงานเปลี่ยนไปแล้วหลังแนบไฟล์นี้ (ถ้ายังรอพิจารณา กด "ยกเลิกเพื่อแก้ไข" ก่อน)'
       : 'ลบได้เฉพาะไฟล์ที่ตนอัปโหลด');
   }
 

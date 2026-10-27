@@ -496,7 +496,7 @@ function renderRows() {
 const FLOW = ['pending', 'assigned', 'in_progress', 'done', 'closed'];
 function progress(st) {
   const i = FLOW.indexOf(st);
-  if (i < 0) return `<p class="muted">${st === 'rejected' ? 'เรื่องนี้ไม่ได้รับอนุมัติ' : 'เรื่องนี้ถูกยกเลิกแล้ว'}</p>`;
+  if (i < 0) return `<p class="muted">${st === 'rejected' ? 'เรื่องนี้ไม่ได้รับอนุมัติ' : 'เรื่องนี้ถูกยกเลิกแล้ว ผู้แจ้งแก้ไขแล้วส่งอีกครั้งได้'}</p>`;
   return `<ol class="flow ${i === FLOW.length - 1 ? 'complete' : ''}">${FLOW.map((k, j) =>
     `<li style="--i:${j}" class="${j < i ? 'past' : j === i ? 'now' : ''}">${STATUS[k]}</li>`).join('')}</ol>`;
 }
@@ -540,12 +540,17 @@ async function openDetail(id) {
   if (r.status === 'assigned' && can('request.update_status') && mine('technician_id')) acts.push(['start', 'เริ่มดำเนินการ', 'info']);
   if (r.status === 'in_progress' && can('request.update_status') && mine('technician_id')) acts.push(['complete', 'ดำเนินการเสร็จ', 'ok']);
   if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', 'ok']);
-  if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'cancel']);
-  if (r.status === 'pending' && !r.technician_id && can('request.cancel.own') && mine('requester_id')) acts.push(['delete', 'ลบเรื่องนี้', 'danger']);
+  // ยกเลิกเพื่อแก้ไข: สถานะเป็น cancelled ก่อน หัวหน้าฝ่ายจึงมอบหมายงานไม่ได้ระหว่างผู้แจ้งแก้ข้อมูล
+  if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกเพื่อแก้ไข', 'cancel']);
+  if (['pending', 'cancelled'].includes(r.status) && !r.technician_id && can('request.cancel.own') && mine('requester_id')) acts.push(['delete', 'ลบเรื่องนี้', 'danger']);
 
   // showNote = ช่องหมายเหตุตอนพิจารณา, showWorkNote = ช่องรายละเอียดงานที่ทำตอนช่างกดเสร็จ
+  // showEdit = ฟอร์มแก้ไขคำขอ แสดงเฉพาะผู้แจ้งหลังกด "ยกเลิกเพื่อแก้ไข" แล้ว
   const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
   const showWorkNote = acts.some(([x]) => x === 'complete');
+  const showEdit = r.status === 'cancelled' && !r.technician_id && can('request.cancel.own') && mine('requester_id');
+  // ตัวเลือกประเภทงานและพื้นที่ส่วนกลาง ใช้ชุดเดียวกับฟอร์มแจ้งเรื่อง (โหลดก่อนถ้ายังไม่เคยโหลด)
+  if (showEdit && $('#categorySel').options.length <= 1) await loadOptions();
   $('#detail').innerHTML = `
     <h2>${esc(r.title)} <span class="refno">${refOf(r)}</span></h2>
     <span class="badge s-${r.status}">${STATUS[r.status]}</span>
@@ -572,6 +577,22 @@ async function openDetail(id) {
       <li><b>${STATUS[h.to_status]}</b> · ${withPos(h.changed_by)} ·
         <span class="muted">${fmtDate(h.changed_at)}</span>
         ${h.note ? `<br>${esc(h.note)}` : ''}</li>`).join('')}</ul>
+
+    ${showEdit ? `
+      <form id="editForm" class="edit-req">
+        <h3>แก้ไขคำขอ</h3>
+        <p class="muted small">เรื่องนี้ถูกยกเลิกไว้ชั่วคราว หัวหน้าฝ่ายมอบหมายงานไม่ได้จนกว่าคุณจะกดส่งอีกครั้ง
+          ไฟล์ที่แนบผิดลบได้ในส่วน "ไฟล์แนบ" ด้านบน</p>
+        <label>ประเภทงาน <select name="category_id">${$('#categorySel').innerHTML}</select></label>
+        <label>ความเร่งด่วน <select name="priority">
+          <option value="normal">ปกติ</option><option value="urgent">ด่วน</option></select></label>
+        <label>สถานที่ <select name="location_type">
+          <option value="unit">ห้องของฉัน (${esc($('#unitLabel').textContent)})</option>
+          <option value="common">พื้นที่ส่วนกลาง</option></select></label>
+        <label id="editAreaWrap">พื้นที่ส่วนกลาง <select name="common_area_id">${$('#areaSel').innerHTML}</select></label>
+        <label>รายละเอียด <textarea name="description" rows="3" maxlength="1000"></textarea></label>
+        <button type="submit" class="ok">บันทึกและส่งคำขออีกครั้ง</button>
+      </form>` : ''}
 
     ${acts.length ? `
       <div class="actions">
@@ -603,6 +624,31 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
     }
   };
 
+  // ฟอร์มแก้ไขคำขอ: เติมค่าเดิม แล้วกดบันทึก → PATCH /api/requests/:id (server ตรวจซ้ำทุกช่องและกลับเป็นรอพิจารณา)
+  const ef = $('#editForm');
+  if (ef) {
+    ef.category_id.value = r.category_id;
+    ef.priority.value = r.priority;
+    ef.location_type.value = r.common_area_id ? 'common' : 'unit';
+    ef.common_area_id.value = r.common_area_id || '';
+    ef.description.value = r.description || '';
+    const syncArea = () => $('#editAreaWrap').classList.toggle('hidden', ef.location_type.value !== 'common');
+    ef.location_type.onchange = syncArea;
+    syncArea();
+    ef.onsubmit = async (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(ef));
+      if (!v.category_id) { $('#detailMsg').textContent = 'กรุณาเลือกประเภทงาน'; return; }
+      if (v.location_type === 'common' && !v.common_area_id) { $('#detailMsg').textContent = 'กรุณาเลือกพื้นที่ส่วนกลาง'; return; }
+      try {
+        await api(`/requests/${id}`, { method: 'PATCH', body: v });
+        toast('บันทึกการแก้ไขและส่งคำขออีกครั้งแล้ว');
+        await openDetail(id);
+        loadRequests().catch(alertErr);
+      } catch (err) { $('#detailMsg').textContent = err.message; }
+    };
+  }
+
   // ตัวจัดการคลิกทั้งหน้ารายละเอียด: ดูรูปแบบป๊อปอัป, ปุ่มลบไฟล์, ลบเรื่อง, และปุ่มเปลี่ยนสถานะ (data-act)
   $('#detail').onclick = async (e) => {
     // ลิงก์รูปภาพ (data-preview) เปิดเป็นป๊อปอัปในหน้าเดิม ไม่เปิดแท็บใหม่ ส่วน PDF ยังเปิดแท็บใหม่ตามปกติ
@@ -624,7 +670,7 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
     const b = e.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'delete') {
-      const ok = await confirmBox({ title: 'ลบเรื่องนี้?', message: 'เรื่อง ไฟล์แนบ และความคิดเห็นทั้งหมดจะถูกลบถาวร กู้คืนไม่ได้', ok: 'ลบเรื่อง', danger: true });
+      const ok = await confirmBox({ title: 'ลบเรื่องนี้?', message: 'เรื่อง ไฟล์แนบ และประวัติทั้งหมดจะถูกลบถาวร กู้คืนไม่ได้', ok: 'ลบเรื่อง', danger: true });
       if (!ok) return;
       try {
         await api(`/requests/${id}`, { method: 'DELETE' });
@@ -636,6 +682,7 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
     }
     const noteEl = $('#actNote');
     const body = { note: noteEl?.value.trim() || undefined };
+    if (b.dataset.act === 'cancel') body.note = 'ยกเลิกเพื่อแก้ไขข้อมูล';
     if (b.dataset.act === 'complete' && !body.note) {
       $('#detailMsg').textContent = 'กรุณากรอกรายละเอียดงานที่ทำก่อนกดดำเนินการเสร็จ';
       noteEl?.focus();

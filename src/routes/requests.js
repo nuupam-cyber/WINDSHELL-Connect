@@ -5,7 +5,8 @@
 // กระบวนการหลัก (Workflow):
 //   ลูกบ้านแจ้งเรื่อง (pending) → หัวหน้าฝ่ายพิจารณา: มอบหมายช่าง (assigned) หรือ ไม่อนุมัติ (rejected)
 //   → ช่างเริ่มงาน (in_progress) → ช่างแจ้งเสร็จพร้อมรายละเอียด (done) → ลูกบ้านยืนยันปิดเรื่อง (closed)
-//   ระหว่างรอพิจารณา ลูกบ้านยกเลิก (cancelled) หรือลบเรื่องถาวรได้
+//   ระหว่างรอพิจารณา ลูกบ้าน "ยกเลิกเพื่อแก้ไข" (cancelled: หัวหน้าฝ่ายมอบหมายไม่ได้แล้ว) → แก้ข้อมูล/ไฟล์
+//   → บันทึกและส่งอีกครั้ง (PATCH กลับเป็น pending) หรือลบเรื่องถาวร (DELETE)
 //
 // การป้องกัน 3 ชั้นในทุกการกระทำ:
 //   1) requirePermission  → Role มีสิทธิ์ทำการนี้ไหม (ACL จากฐานข้อมูล)
@@ -65,6 +66,7 @@ const TRANSITIONS = {
 // LEFT JOIN เพราะบางคอลัมน์อาจว่าง เช่น ยังไม่มีช่าง หรือแจ้งพื้นที่ส่วนกลางจึงไม่มีห้อง
 const BASE = `
   SELECT r.id, r.title, r.description, r.status, r.priority,
+         r.category_id, r.unit_id, r.common_area_id,
          r.requester_id, r.department_id, r.technician_id,
          r.created_at, r.updated_at,
          cat.name AS category,
@@ -175,13 +177,11 @@ router.get('/options', requirePermission('request.create'), async (req, res) => 
   res.json({ categories: categories.rows, commonAreas: areas.rows, unit: unit ?? null });
 });
 
-// POST /api/requests — แจ้งเรื่องใหม่ (สิทธิ์ request.create) รับเป็น multipart/form-data เพราะแนบไฟล์มาด้วย
-// ขั้นตอน: ตรวจข้อมูลทุกช่อง → ตรวจไฟล์ → หาสถานที่ → บันทึกทั้งหมดใน Transaction เดียว → Log
-router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany), async (req, res) => {
-  const { user } = req;
-  const b = req.body;
-
-  // ตรวจข้อมูลฝั่ง Server: ค่า priority / location_type ต้องอยู่ในรายการที่กำหนด, category ต้องมีอยู่จริงในฐานข้อมูล
+// readRequestFields: ตรวจข้อมูลคำร้องฝั่ง Server ใช้ร่วมกันทั้งตอนแจ้งเรื่องใหม่ (POST) และตอนแก้ไข (PATCH)
+// ค่า priority / location_type ต้องอยู่ในรายการที่กำหนด, ประเภทงานและพื้นที่ส่วนกลางต้องมีอยู่จริงและเปิดใช้งาน
+// สถานที่ "ห้องของฉัน" ใช้ห้องที่ผูกกับบัญชีเสมอ (ผู้ใช้เลือกห้องอื่นเองไม่ได้)
+// คืน { cat, needsPhoto, priority, description, unitId, areaId, title }
+async function readRequestFields(user, b) {
   if (!user.unit_id) throw new HttpError(400, 'บัญชีนี้ยังไม่ได้ผูกกับห้องชุด กรุณาติดต่อนิติบุคคล');
   const categoryId = parseId(b.category_id);
   if (!PRIORITIES.includes(b.priority)) throw new HttpError(400, 'ระดับความเร่งด่วนไม่ถูกต้อง');
@@ -189,28 +189,12 @@ router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany
   const description = typeof b.description === 'string' ? (b.description.trim().slice(0, 1000) || null) : null;
 
   const { rows: [cat] } = await db.query(
-    'SELECT id, name, department_id, requires_detail FROM issue_categories WHERE id = $1 AND is_active', [categoryId]);
+    `SELECT c.id, c.name, c.department_id, c.requires_detail, (d.name = $2) AS needs_photo
+     FROM issue_categories c JOIN departments d ON d.id = c.department_id
+     WHERE c.id = $1 AND c.is_active`, [categoryId, PHOTO_REQUIRED_DEPARTMENT]);
   if (!cat) throw new HttpError(400, 'ประเภทงานไม่ถูกต้อง');
   if (cat.requires_detail && !description) throw new HttpError(400, 'ประเภทนี้ต้องกรอกรายละเอียด');
 
-  // ตรวจไฟล์ฝั่ง Server: ต้องแนบถ้าเป็นงานช่างอาคาร และตรวจชนิดจากเนื้อไฟล์ทุกไฟล์ก่อนบันทึกอะไร
-  const files = req.files || [];
-  const { rows: [dept] } = await db.query('SELECT name FROM departments WHERE id = $1', [cat.department_id]);
-  if (dept && dept.name === PHOTO_REQUIRED_DEPARTMENT && files.length === 0) {
-    throw new HttpError(400, 'งานประเภทนี้ต้องแนบรูปอย่างน้อย 1 ไฟล์ เพื่อให้ช่างเห็นปัญหา');
-  }
-  if (files.length && !req.permissions.has('attachment.upload')) {
-    await deny(req, 'repair_request', null, 'create with attachment');
-    throw new HttpError(403, 'ไม่มีสิทธิ์อัปโหลดไฟล์');
-  }
-  // ตรวจชนิดไฟล์จากเนื้อไฟล์ (magic number) ทุกไฟล์ ถ้ามีไฟล์ไหนไม่ผ่าน ปฏิเสธทั้งคำขอและบันทึก Log failure
-  const typed = files.map((f) => ({ file: f, type: detectType(f.buffer) }));
-  if (typed.some((t) => !t.type)) {
-    await audit(req, { eventType: 'attachment_upload', resourceType: 'repair_request', result: 'failure', detail: 'unsupported file type (create)' });
-    throw new HttpError(415, 'รองรับเฉพาะไฟล์ JPG, PNG หรือ PDF');
-  }
-
-  // สถานที่: "ห้องของฉัน" ใช้ห้องที่ผูกกับบัญชี (ผู้ใช้เลือกห้องอื่นเองไม่ได้) หรือ "พื้นที่ส่วนกลาง" ที่ยังเปิดใช้งาน
   let unitId = null;
   let areaId = null;
   let placeLabel;
@@ -225,6 +209,30 @@ router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany
     if (!area) throw new HttpError(400, 'พื้นที่ส่วนกลางไม่ถูกต้อง');
     placeLabel = area.name;
   }
+  return { cat, needsPhoto: cat.needs_photo, priority: b.priority, description, unitId, areaId, title: `${cat.name} · ${placeLabel}` };
+}
+
+const PHOTO_REQUIRED_MSG = 'งานประเภทนี้ต้องแนบรูปอย่างน้อย 1 ไฟล์ เพื่อให้ช่างเห็นปัญหา';
+
+// POST /api/requests — แจ้งเรื่องใหม่ (สิทธิ์ request.create) รับเป็น multipart/form-data เพราะแนบไฟล์มาด้วย
+// ขั้นตอน: ตรวจข้อมูลทุกช่อง (readRequestFields) → ตรวจไฟล์ → บันทึกทั้งหมดใน Transaction เดียว → Log
+router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany), async (req, res) => {
+  const { user } = req;
+  const f = await readRequestFields(user, req.body);
+
+  // ตรวจไฟล์ฝั่ง Server: ต้องแนบถ้าเป็นงานช่างอาคาร และตรวจชนิดจากเนื้อไฟล์ทุกไฟล์ก่อนบันทึกอะไร
+  const files = req.files || [];
+  if (f.needsPhoto && files.length === 0) throw new HttpError(400, PHOTO_REQUIRED_MSG);
+  if (files.length && !req.permissions.has('attachment.upload')) {
+    await deny(req, 'repair_request', null, 'create with attachment');
+    throw new HttpError(403, 'ไม่มีสิทธิ์อัปโหลดไฟล์');
+  }
+  // ตรวจชนิดไฟล์จากเนื้อไฟล์ (magic number) ทุกไฟล์ ถ้ามีไฟล์ไหนไม่ผ่าน ปฏิเสธทั้งคำขอและบันทึก Log failure
+  const typed = files.map((f) => ({ file: f, type: detectType(f.buffer) }));
+  if (typed.some((t) => !t.type)) {
+    await audit(req, { eventType: 'attachment_upload', resourceType: 'repair_request', result: 'failure', detail: 'unsupported file type (create)' });
+    throw new HttpError(415, 'รองรับเฉพาะไฟล์ JPG, PNG หรือ PDF');
+  }
 
   // Transaction: สร้างคำร้อง + ประวัติสถานะแรก (pending) + ไฟล์แนบ ถ้าขั้นไหนพังจะยกเลิกทั้งหมด
   // ชื่อไฟล์ที่เก็บ (stored_name) สุ่มด้วย randomUUID ไม่ชนกัน ส่วนชื่อเดิมตัด path ออกด้วย path.basename กันชื่อไฟล์อันตราย
@@ -234,7 +242,7 @@ router.post('/', requirePermission('request.create'), logUploadErrors(uploadMany
          (category_id, unit_id, common_area_id, priority, title, description, requester_id, department_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [cat.id, unitId, areaId, b.priority, `${cat.name} · ${placeLabel}`, description, user.id, cat.department_id]
+      [f.cat.id, f.unitId, f.areaId, f.priority, f.title, f.description, user.id, f.cat.department_id]
     );
     await client.query(
       `INSERT INTO request_status_history (request_id, from_status, to_status, changed_by)
@@ -429,7 +437,48 @@ for (const [action, rule] of Object.entries(TRANSITIONS)) {
     (req, res) => runTransition(req, res, action));
 }
 
-// DELETE /api/requests/:id — ตรวจ: สิทธิ์ request.cancel.own → ต้องเป็นผู้แจ้งเอง → สถานะยัง pending และยังไม่มีช่าง
+// PATCH /api/requests/:id — บันทึกการแก้ไขและส่งคำขออีกครั้ง (ประเภทงาน ความเร่งด่วน สถานที่ รายละเอียด)
+// ใช้หลังผู้แจ้งกด "ยกเลิกเพื่อแก้ไข" (สถานะ cancelled) ระหว่างนั้นหัวหน้าฝ่ายมอบหมายงานไม่ได้
+// ตรวจ: สิทธิ์ request.cancel.own → ต้องเป็นผู้แจ้งเอง → สถานะต้องเป็น cancelled และยังไม่มีช่าง
+// บันทึกแล้วสถานะกลับเป็น pending + เพิ่มประวัติ "ส่งคำขออีกครั้งหลังแก้ไข" + Log request_update
+router.patch('/:id', requirePermission('request.cancel.own'), async (req, res) => {
+  const id = parseId(req.params.id);
+  const f = await readRequestFields(req.user, req.body);
+  const updated = await withTransaction(async (client) => {
+    const { rows: [r] } = await client.query('SELECT * FROM repair_requests WHERE id = $1 FOR UPDATE', [id]);
+    if (!r || !canView(req.user, req.permissions, r)) throw new HttpError(404, 'ไม่พบรายการ');
+    if (r.requester_id !== req.user.id) {
+      await deny(req, 'repair_request', id, 'update: not requester');
+      throw new HttpError(403, 'แก้ไขได้เฉพาะเรื่องที่ตนแจ้ง');
+    }
+    if (r.status !== 'cancelled' || r.technician_id) {
+      throw new HttpError(409, 'แก้ไขได้เฉพาะเรื่องที่กด "ยกเลิกเพื่อแก้ไข" แล้ว และยังไม่ได้มอบหมายงาน');
+    }
+    // เปลี่ยนเป็นประเภทงานช่างอาคาร ต้องมีรูปแนบอยู่แล้วอย่างน้อย 1 ไฟล์
+    if (f.needsPhoto) {
+      const { rows: [{ n }] } = await client.query('SELECT COUNT(*)::int AS n FROM attachments WHERE request_id = $1', [id]);
+      if (!n) throw new HttpError(400, `${PHOTO_REQUIRED_MSG} (แนบไฟล์ก่อน แล้วจึงบันทึกการแก้ไข)`);
+    }
+    // department_id เปลี่ยนตามประเภทงานใหม่ เรื่องจึงไปอยู่กับหัวหน้าฝ่ายที่ถูกต้อง
+    const { rows: [u] } = await client.query(
+      `UPDATE repair_requests
+       SET category_id = $1, unit_id = $2, common_area_id = $3, priority = $4, title = $5,
+           description = $6, department_id = $7, status = 'pending', updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [f.cat.id, f.unitId, f.areaId, f.priority, f.title, f.description, f.cat.department_id, id]
+    );
+    await client.query(
+      `INSERT INTO request_status_history (request_id, from_status, to_status, changed_by, note)
+       VALUES ($1, 'cancelled', 'pending', $2, 'ส่งคำขออีกครั้งหลังแก้ไข')`,
+      [id, req.user.id]
+    );
+    return u;
+  });
+  await audit(req, { eventType: 'request_update', resourceType: 'repair_request', resourceId: id, result: 'success', detail: 'edit and resubmit' });
+  res.json(updated);
+});
+
+// DELETE /api/requests/:id — ตรวจ: สิทธิ์ request.cancel.own → ต้องเป็นผู้แจ้งเอง → สถานะ pending หรือ cancelled และยังไม่มีช่าง
 // ประวัติสถานะและไฟล์แนบถูกลบตามอัตโนมัติด้วย ON DELETE CASCADE ในฐานข้อมูล
 router.delete('/:id', requirePermission('request.cancel.own'), async (req, res) => {
   const id = parseId(req.params.id);
@@ -440,7 +489,7 @@ router.delete('/:id', requirePermission('request.cancel.own'), async (req, res) 
       await deny(req, 'repair_request', id, 'delete: not requester');
       throw new HttpError(403, 'ลบได้เฉพาะเรื่องที่ตนแจ้ง');
     }
-    if (r.status !== 'pending' || r.technician_id) {
+    if (!['pending', 'cancelled'].includes(r.status) || r.technician_id) {
       throw new HttpError(409, 'ลบไม่ได้ เพราะเรื่องนี้ถูกพิจารณาหรือมอบหมายงานแล้ว');
     }
     await client.query('DELETE FROM repair_requests WHERE id = $1', [id]);

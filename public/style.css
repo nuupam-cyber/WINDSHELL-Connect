@@ -4076,3 +4076,26 @@ dialog.img-view {
   margin: 0 auto 8px;
   border-radius: 6px;
 }
+
+/* ฟอร์มแก้ไขคำขอ หลังผู้แจ้งกด "ยกเลิกเพื่อแก้ไข" (openDetail ใน app.js) */
+.edit-req {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.edit-req h3 {
+  margin: 0;
+}
+
+.edit-req label {
+  display: grid;
+  gap: 4px;
+}
+
+.edit-req button {
+  justify-self: start;
+}
