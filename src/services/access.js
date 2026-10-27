@@ -38,11 +38,14 @@ function inScope(scope, user, perms, r) {
 }
 
 // SQL: ไฟล์ถูกอัปโหลดหลังการเปลี่ยนสถานะครั้งล่าสุดหรือไม่ (ใช้กับ alias a = attachments)
-const STATUS_UNCHANGED_SQL = `a.created_at >= (SELECT MAX(h.changed_at) FROM request_status_history h WHERE h.request_id = a.request_id)`;
+// ใช้ > ไม่ใช่ >= : ไฟล์ที่แนบมาพร้อมตอนส่งเรื่องบันทึกใน Transaction เดียวกับสถานะแรก (เวลา NOW() เท่ากัน)
+// จึงถือว่าส่งไปแล้ว ลบไม่ได้ ส่วนไฟล์ที่แนบเพิ่มทีหลังในหน้ารายละเอียด ลบได้จนกว่าสถานะจะเปลี่ยน
+const STATUS_UNCHANGED_SQL = `a.created_at > (SELECT MAX(h.changed_at) FROM request_status_history h WHERE h.request_id = a.request_id)`;
 
 // ลบไฟล์แนบได้เมื่อ
 // - มี attachment.delete: ไฟล์ของตน หรือมีสิทธิ์ดูทั้งหมด
-// - หรือมี attachment.upload: เฉพาะไฟล์ที่ตนอัปโหลด และงานยังไม่เปลี่ยนสถานะหลังอัปโหลด (แนบผิดแล้วลบใหม่ได้)
+// - หรือมี attachment.upload: เฉพาะไฟล์ที่ตนแนบเพิ่มในหน้ารายละเอียด และงานยังไม่เปลี่ยนสถานะหลังแนบ (แนบผิดแล้วลบใหม่ได้)
+//   ไฟล์ที่ส่งมาพร้อมเรื่องลบไม่ได้ (ถ้าผิดทั้งเรื่อง ให้ลบเรื่องแล้วแจ้งใหม่)
 function canDeleteAttachment(user, perms, a) {
   if (perms.has('attachment.delete') && (a.uploaded_by === user.id || perms.has('request.read.all'))) return true;
   return perms.has('attachment.upload') && a.uploaded_by === user.id && a.status_unchanged === true;
