@@ -316,3 +316,6 @@ td:last-child .small{margin-bottom:2px}
 .dlg-form fieldset{border:1px solid var(--line);border-radius:6px;margin:0 0 14px;padding:10px 12px 4px}
 .dlg-form legend{font-size:13px;font-weight:600;color:var(--primary-d);padding:0 4px}
 .dlg-form .ok-msg{color:#1e6b34;font-size:14px;margin:0 0 6px}
+
+.refno{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;letter-spacing:.3px;white-space:nowrap}
+h2 .refno{display:inline-block;margin-left:6px;color:var(--muted);background:#f0f3f4;padding:2px 8px;border-radius:4px;vertical-align:middle}

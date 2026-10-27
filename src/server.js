@@ -143,6 +143,46 @@ app.post('/api/announcements/:id/cancel', authenticate, async (req, res, next) =
   }
   next();
 });
+
+// ===== เลขที่คำร้อง: รหัสอ้างอิงแบบสลิปธนาคาร (WS-XXXX-XXXX) =====
+// สร้างจากเลข id ภายในด้วย HMAC + ความลับของระบบ จึงเดาลำดับ/จำนวนคำร้องไม่ได้ และไม่ต้องแก้ฐานข้อมูล
+// (เลข id เดิมยังใช้ภายใน API เหมือนเดิม)
+const crypto = require('crypto');
+const REF_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // ตัดตัวที่สับสน I L O 0 1
+function refCode(id) {
+  const h = crypto.createHmac('sha256', process.env.REF_SECRET || process.env.SESSION_SECRET || 'default_secret_key')
+    .update(`request:${id}`).digest();
+  let out = '';
+  for (let i = 0; i < 8; i++) out += REF_CHARS[h[i] % REF_CHARS.length];
+  return `WS-${out.slice(0, 4)}-${out.slice(4)}`;
+}
+function addRefs(body) {
+  const one = (r) => {
+    if (r && typeof r === 'object' && r.id != null && r.created_at && r.category !== undefined) r.ref = refCode(r.id);
+    return r;
+  };
+  if (Array.isArray(body)) body.forEach(one);
+  else if (body && typeof body === 'object') {
+    one(body);
+    if (Array.isArray(body.items)) {
+      body.items.forEach((n) => {
+        if (n && n.requestId != null) {
+          n.ref = refCode(n.requestId);
+          if (typeof n.title === 'string') n.title = n.title.replace(`#${n.requestId} `, `${n.ref} `);
+        }
+      });
+    }
+  }
+  return body;
+}
+function withRefs(req, res, next) {
+  const json = res.json.bind(res);
+  res.json = (body) => json(addRefs(body));
+  next();
+}
+app.use('/api/requests', withRefs);
+app.use('/api/notifications', withRefs);
+
 loadRoute('./routes/requests', '/api/requests', authenticate);
 loadRoute('./routes/admin-extra', '/api/admin', authenticate); // ตั้งรหัสผ่านใหม่
 loadRoute('./routes/admin', '/api/admin', authenticate);
