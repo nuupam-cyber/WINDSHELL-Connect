@@ -486,27 +486,62 @@ async function loadComments(id) {
 const ANN_ICON = { elevator: '🛗', maintenance: '🔧', water: '💧', electric: '⚡', aircon: '❄️', general: '📢' };
 const ANN_LABEL = { elevator: 'ลิฟต์', maintenance: 'บำรุงรักษา', water: 'ประปา', electric: 'ไฟฟ้า', aircon: 'เครื่องปรับอากาศ', general: 'ทั่วไป' };
 
+const ANN_WEIGHT = { elevator: 0, water: 0, electric: 0, aircon: 1, maintenance: 1, general: 2 };
+const ANN_GROUPS = [['live', 'กำลังเกิดขึ้นตอนนี้'], ['upcoming', 'กำลังจะมาถึง'], ['ended', 'สิ้นสุดแล้ว']];
+const CLOCK = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+const annDate = (d) => new Date(d).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' });
+const annTime = (d) => `${String(new Date(d).getHours()).padStart(2, '0')}:${String(new Date(d).getMinutes()).padStart(2, '0')}`;
+const dayDiff = (d) => {
+  const a = new Date(); a.setHours(0, 0, 0, 0);
+  const b = new Date(d); b.setHours(0, 0, 0, 0);
+  return Math.round((b - a) / 864e5);
+};
+
+function annInfo(a) {
+  const now = Date.now(), s = new Date(a.starts_at), e = new Date(a.ends_at);
+  const when = annDate(s) === annDate(e)
+    ? `${annDate(s)} · ${annTime(s)}–${annTime(e)} น.`
+    : `${annDate(s)} ${annTime(s)} น. – ${annDate(e)} ${annTime(e)} น.`;
+  if (now > e) return { state: 'ended', chip: 'สิ้นสุดแล้ว', cls: 'ended', when };
+  if (now >= s) return { state: 'live', chip: `กำลังเกิดขึ้น · ถึง ${annTime(e)} น.`, cls: 'live', when };
+  const n = dayDiff(s);
+  return { state: 'upcoming', when, cls: n <= 1 ? 'soon' : '',
+    chip: n === 0 ? `วันนี้ ${annTime(s)} น.` : n === 1 ? 'พรุ่งนี้' : `อีก ${n} วัน` };
+}
+
 async function loadAnnouncements() {
-  const list = await api('/announcements');
-  $('#annCount').textContent = list.length ? `${list.length} รายการที่กำลังจะมาถึง` : '';
+  const list = (await api('/announcements')).map((a) => ({ ...a, ...annInfo(a) }));
+  // เรียง: กำลังเกิดขึ้น > กำลังจะมาถึง (ใกล้สุดก่อน) > สิ้นสุดแล้ว; เวลาเท่ากันให้เรื่องที่กระทบมากก่อน (ลิฟต์/น้ำ/ไฟ)
+  const rank = { live: 0, upcoming: 1, ended: 2 };
+  list.sort((x, y) => rank[x.state] - rank[y.state]
+    || new Date(x.starts_at) - new Date(y.starts_at)
+    || (ANN_WEIGHT[x.type] ?? 2) - (ANN_WEIGHT[y.type] ?? 2));
+
+  const card = (a) => `
+    <article class="an t-${esc(a.type)} ${a.state === 'live' ? 'an-live' : ''} ${a.state === 'ended' ? 'an-ended' : ''}">
+      <div class="an-ico" aria-hidden="true">${ANN_ICON[a.type] || '📢'}</div>
+      <div class="an-main">
+        <div class="an-top"><span class="an-type">${esc(ANN_LABEL[a.type] || a.type)}</span>
+          <span class="an-chip ${a.cls}">${esc(a.chip)}</span></div>
+        <h3 class="an-title">${esc(a.title)}</h3>
+        <div class="an-when">${CLOCK}<span>${esc(a.when)}</span></div>
+        ${a.detail ? `<p class="an-detail">${esc(a.detail)}</p>` : ''}
+        <div class="an-foot">
+          <span class="muted small">ประกาศโดย ${withPos(a.author)}</span>
+          ${can('announcement.manage')
+            ? `<button class="ghost small cancel" data-ann-cancel="${a.id}">ยกเลิกประกาศ</button>` : ''}
+        </div>
+      </div>
+    </article>`;
+
+  $('#annCount').textContent = list.length ? `${list.length} รายการ` : '';
   $('#annList').innerHTML = list.length
-    ? list.map((a) => `
-        <div class="ann ann-${a.type}">
-          <div class="ann-icon">${ANN_ICON[a.type]}</div>
-          <div class="ann-body">
-            <div class="row between wrap">
-              <b>${esc(a.title)}</b>
-              <span class="row">
-                <span class="badge">${ANN_LABEL[a.type]}</span>
-                ${can('announcement.manage')
-                  ? `<button class="ghost small cancel" data-ann-cancel="${a.id}">ยกเลิก</button>` : ''}
-              </span>
-            </div>
-            <div class="muted small">🕒 ${fmtDate(a.starts_at)} – ${fmtDate(a.ends_at)} · โดย ${esc(a.author)}</div>
-            ${a.detail ? `<div class="ann-detail">${esc(a.detail)}</div>` : ''}
-          </div>
-        </div>`).join('')
-    : '<p class="muted">ยังไม่มีประกาศในขณะนี้</p>';
+    ? ANN_GROUPS.map(([k, title]) => {
+        const items = list.filter((a) => a.state === k);
+        return items.length
+          ? `<h3 class="an-group ${k}">${title} <span>${items.length}</span></h3>${items.map(card).join('')}` : '';
+      }).join('')
+    : '<p class="an-empty">ขณะนี้ไม่มีประกาศจากนิติบุคคล</p>';
 }
 
 $('#annList').onclick = async (e) => {
@@ -520,24 +555,75 @@ $('#annList').onclick = async (e) => {
   }
 };
 
+// ===== เลือกวัน-เวลาของประกาศ (เลือกจากรายการ ไม่ต้องพิมพ์) =====
+const pad2 = (n) => String(n).padStart(2, '0');
+const TIME_OPTS = Array.from({ length: 96 }, (_, i) => `${pad2(Math.floor(i / 4))}:${pad2((i % 4) * 15)}`);
+const dStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const tStr = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const annAt = (f, k) => {
+  const d = f[`${k}_date`].value, t = f[`${k}_time`].value;
+  return d && t ? new Date(`${d}T${t}:00`) : null;
+};
+const annSet = (f, k, date) => { f[`${k}_date`].value = dStr(date); f[`${k}_time`].value = tStr(date); };
+let annDur = 60; // นาที ระหว่างเริ่มกับสิ้นสุด ใช้เลื่อนเวลาสิ้นสุดตามเวลาเริ่ม
+
+function initAnnTimes() {
+  const f = $('#annForm');
+  ['starts_time', 'ends_time'].forEach((n) => {
+    f[n].innerHTML = TIME_OPTS.map((t) => `<option value="${t}">${t} น.</option>`).join('');
+  });
+  const s = new Date();
+  s.setMinutes(Math.ceil((s.getMinutes() + 1) / 15) * 15, 0, 0);
+  annDur = 60;
+  annSet(f, 'starts', s);
+  annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
+}
+initAnnTimes();
+
+$('#annForm').addEventListener('change', (e) => {
+  const f = e.currentTarget, n = e.target.name || '';
+  const s = annAt(f, 'starts');
+  if (n.startsWith('starts_') && s) annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
+  if (n.startsWith('ends_')) {
+    const en = annAt(f, 'ends');
+    if (s && en && en > s) annDur = (en - s) / 60000;
+  }
+});
+
+$('#annForm').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-dur]');
+  if (!b) return;
+  const f = $('#annForm');
+  let s = annAt(f, 'starts') || new Date();
+  if (b.dataset.dur === 'day') {
+    s = new Date(s); s.setHours(0, 0, 0, 0);
+    annDur = 24 * 60 - 15; // 00:00 – 23:45
+    annSet(f, 'starts', s);
+  } else {
+    annDur = Number(b.dataset.dur);
+  }
+  annSet(f, 'ends', new Date(s.getTime() + annDur * 60000));
+});
+
 $('#annForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
   const msg = $('#annMsg');
   msg.textContent = '';
-  if (new Date(f.ends_at) <= new Date(f.starts_at)) {
-    msg.textContent = 'เวลาสิ้นสุดต้องหลังเวลาเริ่ม';
-    return;
-  }
+  const s = annAt(e.target, 'starts'), en = annAt(e.target, 'ends');
+  if (!s || !en) { msg.textContent = 'กรุณาเลือกวันและเวลาให้ครบ'; return; }
+  if (en <= s) { msg.textContent = 'เวลาสิ้นสุดต้องหลังเวลาเริ่ม'; return; }
   try {
     await api('/announcements', { method: 'POST', body: {
       type: f.type,
       title: f.title.trim(),
       detail: f.detail.trim(),
-      starts_at: new Date(f.starts_at).toISOString(),
-      ends_at: new Date(f.ends_at).toISOString(),
+      starts_at: s.toISOString(),
+      ends_at: en.toISOString(),
     } });
     e.target.reset();
+    initAnnTimes();
+    toast('เผยแพร่ประกาศแล้ว');
     await loadAnnouncements();
   } catch (err) {
     msg.textContent = err.message;
@@ -590,5 +676,5 @@ $('#markRead').onclick = async () => {
 
 // ตรวจการแจ้งเตือนใหม่ทุก 60 วินาที
 setInterval(() => {
-  if (me) loadNotifications().catch(() => {});
+  if (me) { loadNotifications().catch(() => {}); loadAnnouncements().catch(() => {}); }
 }, 60000);

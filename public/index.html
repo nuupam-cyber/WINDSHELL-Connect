@@ -99,7 +99,7 @@
           <h2>ประกาศจากนิติบุคคล</h2>
           <span id="annCount" class="muted small"></span>
         </div>
-        <div id="annList" class="ann-list"></div>
+        <div id="annList" class="an-list"></div>
 
         <details class="ann-form hidden" data-perm="announcement.manage">
           <summary>+ สร้างประกาศใหม่ <span class="role">ผู้ดูแล</span></summary>
@@ -115,9 +115,28 @@
               </select>
               <input name="title" maxlength="200" placeholder="หัวข้อ เช่น ปิดลิฟต์ตัวที่ 1" required>
             </div>
-            <div class="grid-form">
-              <label>เริ่ม<input name="starts_at" type="datetime-local" required></label>
-              <label>สิ้นสุด<input name="ends_at" type="datetime-local" required></label>
+            <div class="when">
+              <fieldset>
+                <legend>เริ่ม</legend>
+                <div class="when-row">
+                  <input type="date" name="starts_date" aria-label="วันที่เริ่ม" required>
+                  <select name="starts_time" aria-label="เวลาเริ่ม"></select>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>สิ้นสุด</legend>
+                <div class="when-row">
+                  <input type="date" name="ends_date" aria-label="วันที่สิ้นสุด" required>
+                  <select name="ends_time" aria-label="เวลาสิ้นสุด"></select>
+                </div>
+              </fieldset>
+            </div>
+            <div class="chips">
+              <span class="muted small">ตั้งระยะเวลาเร็ว ๆ</span>
+              <button type="button" class="ghost small" data-dur="60">1 ชั่วโมง</button>
+              <button type="button" class="ghost small" data-dur="180">3 ชั่วโมง</button>
+              <button type="button" class="ghost small" data-dur="480">8 ชั่วโมง</button>
+              <button type="button" class="ghost small" data-dur="day">ทั้งวัน</button>
             </div>
             <textarea name="detail" rows="2" maxlength="1000"
               placeholder="รายละเอียด เช่น ใช้ลิฟต์ตัวที่ 2 แทนระหว่างซ่อม"></textarea>

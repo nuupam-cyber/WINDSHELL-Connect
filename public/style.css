@@ -106,12 +106,6 @@ ul.timeline{border-left:2px solid var(--line)}ul.timeline li{padding:0 0 12px 14
 .day-bar{width:100%;min-height:3px;position:relative;background:var(--primary);border-radius:3px 3px 0 0;transition:height .5s}
 .day-bar span{position:absolute;top:-20px;left:0;right:0;text-align:center;font-size:12px;font-weight:600}.day small{color:var(--muted);font-size:12px;margin-top:4px}
 /* announcements */
-.ann-list{display:grid;gap:10px;margin-top:12px}
-.ann{display:flex;gap:14px;padding:12px 14px;border:1px solid var(--line);border-left:4px solid #9fb3bc;border-radius:6px}
-.ann-icon{font-size:24px;line-height:1}.ann-body{flex:1;min-width:0}.ann-body .row{gap:8px;margin-bottom:4px}.ann-detail{font-size:14px;margin-top:6px}
-.ann-elevator{border-left-color:#3b78c2}.ann-maintenance{border-left-color:#c98a0b}.ann-water{border-left-color:#2f93c4}
-.ann-electric{border-left-color:#d1a800}.ann-aircon{border-left-color:#27a3a3}.ann-general{border-left-color:#0b6b6f}
-.ann-list .muted{text-align:center;padding:18px;border:1px dashed #c3cfd5;border-radius:6px}
 .ann-form{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}.ann-form summary{cursor:pointer;color:var(--primary);font-weight:600}
 .ann-form form{margin-top:12px;display:grid;gap:8px}.ann-form label{margin-bottom:0}
 .site-footer{text-align:center;color:var(--muted);font-size:12.5px;padding:24px 0 12px}
@@ -193,3 +187,33 @@ dialog.dlg::backdrop{background:rgba(15,28,36,.5)}
 .plink{color:var(--ink);font-weight:500;text-decoration:underline dotted var(--primary);text-underline-offset:3px}
 .plink:hover{color:var(--primary)}
 .dlg-info{margin:0 0 6px}
+
+/* ประกาศ: เรียงตามความสำคัญ (กำลังเกิดขึ้น > กำลังจะมาถึง > สิ้นสุดแล้ว) */
+.an-list{display:grid;gap:10px;margin-top:8px}
+.an-group{margin:14px 0 0;font-size:13px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:8px}
+.an-group:first-child{margin-top:4px}
+.an-group span{font-weight:500;background:#e9eef0;border-radius:999px;padding:0 8px;font-size:12px}
+.an-group.live{color:#a32d1f}.an-group.live span{background:#fbe3e0}
+.an{--c:#0b6b6f;display:flex;gap:14px;padding:14px 16px;border:1px solid var(--line);border-left:4px solid var(--c);border-radius:6px;background:#fff}
+.t-elevator{--c:#3b78c2}.t-maintenance{--c:#c98a0b}.t-water{--c:#2f93c4}.t-electric{--c:#b58f00}.t-aircon{--c:#27a3a3}.t-general{--c:#0b6b6f}
+.an-live{background:#fff6f4;border-color:#f0c8c1;border-left-color:#c62d1f}
+.an-ended{opacity:.65}
+.an-ico{width:44px;height:44px;border-radius:8px;display:grid;place-items:center;font-size:24px;flex:none;background:color-mix(in srgb,var(--c) 14%,#fff)}
+.an-main{flex:1;min-width:0}
+.an-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.an-type{font-size:13px;color:var(--muted)}
+.an-chip{font-size:12px;font-weight:600;padding:1px 8px;border-radius:4px;background:var(--tint);color:var(--primary-d)}
+.an-chip.live{background:#c62d1f;color:#fff}.an-chip.soon{background:#fdf1d6;color:#7a4e00}.an-chip.ended{background:#e6eaec;color:#3b4a53}
+.an-title{margin:4px 0;font-size:17px;line-height:1.35}.an-live .an-title{font-size:19px}
+.an-when{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500}
+.an-when svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.an-detail{margin:8px 0 0;font-size:14px}
+.an-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px}
+.an-empty{text-align:center;padding:22px;border:1px dashed #c3cfd5;border-radius:6px;color:var(--muted);margin:8px 0 0}
+/* เลือกวัน-เวลา */
+.when{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.when fieldset{border:1px solid var(--line);border-radius:6px;padding:6px 10px 10px;margin:0;min-width:0}
+.when legend{font-size:13px;font-weight:500;color:var(--muted);padding:0 4px}
+.when-row{display:grid;grid-template-columns:1fr 130px;gap:8px}.when input,.when select{margin-top:0}
+.chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+@media(max-width:640px){.when{grid-template-columns:1fr}.an{padding:12px}.an-ico{width:36px;height:36px;font-size:20px}}
