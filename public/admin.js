@@ -449,58 +449,61 @@ async function renderRoles() {
 }
 
 // แท็บ Permission: เพิ่ม/แก้ไข/ลบรายการสิทธิ์ผ่านเว็บ (GET/POST/PATCH/DELETE /api/admin/permissions)
-// สิทธิ์ที่โค้ดใช้ตรวจอยู่ (in_code) ลบหรือเปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย
-// "สิทธิ์ที่ระบบรองรับแต่ยังไม่ได้เพิ่ม" (missing) เช่น request.export ใช้สาธิตการเพิ่ม Permission แล้วเชื่อมกับฟังก์ชัน
+// เพิ่มได้เฉพาะสิทธิ์ที่โค้ดรองรับแล้วแต่ยังไม่มีในฐานข้อมูล (missing) เลือกจากรายการ ไม่ต้องพิมพ์ชื่อเอง
+//   ทั้งสิทธิ์ที่ยังไม่เคยเพิ่ม (เช่น request.export) และสิทธิ์ที่เคยถูกลบไป กลับมาเพิ่มคืนได้
+// แก้ไขได้เฉพาะคำอธิบาย · ลบได้เฉพาะสิทธิ์ที่ deletable (สิทธิ์เสริม) สิทธิ์หลักของระบบไม่มีปุ่มลบ
 async function renderPermissions() {
   const { permissions, missing } = await api('/admin/permissions');
   $('#content').innerHTML = `
-    ${missing.length ? `<div class="notice">สิทธิ์ที่ระบบรองรับแต่ยังไม่ได้เพิ่ม:
-      ${missing.map((n) => `<button class="ghost small" data-quick="${esc(n)}">+ ${esc(n)}</button>`).join(' ')}
-      <div class="small">เพิ่มแล้ว Admin ได้รับสิทธิ์ทันที จากนั้นไปติ๊กให้ Role อื่นที่แท็บ "สิทธิ์ (ACL)"</div></div>` : ''}
-    <form id="permForm" class="row wrap">
-      <input name="name" placeholder="ชื่อสิทธิ์ เช่น equipment.read" required>
-      <input name="description" placeholder="คำอธิบาย">
-      <button>เพิ่ม Permission</button>
+    <form id="permForm" class="perm-add">
+      <label>เพิ่ม Permission
+        <select name="name" ${missing.length ? '' : 'disabled'}>
+          ${missing.length
+            ? missing.map((n) => `<option value="${esc(n)}">${esc(n)}${PERM[n] ? ` · ${esc(PERM[n][1])}` : ''}</option>`).join('')
+            : '<option>สิทธิ์ที่ระบบรองรับมีครบแล้ว</option>'}
+        </select>
+      </label>
+      <button ${missing.length ? '' : 'disabled'}>เพิ่ม Permission</button>
+      <p class="muted small">เลือกได้เฉพาะสิทธิ์ที่ระบบมีฟังก์ชันรองรับ (รวมถึงสิทธิ์ที่เคยถูกลบไป) เพิ่มแล้ว Admin ได้รับสิทธิ์ทันที
+        จากนั้นไปติ๊กให้ Role อื่นที่แท็บ "สิทธิ์ (ACL)"</p>
     </form>
     <div class="table-wrap" style="margin-top:12px">
       <table>
-        <thead><tr><th>ชื่อ</th><th>คำอธิบาย</th><th>ผูกกับฟังก์ชัน</th><th></th></tr></thead>
+        <thead><tr><th>ชื่อ</th><th>คำอธิบาย</th><th>ประเภท</th><th></th></tr></thead>
         <tbody>${permissions.map((p) => `<tr>
           <td><code>${esc(p.name)}</code></td>
           <td>${esc(p.description)}</td>
-          <td>${p.in_code ? '<span class="badge s-done">ใช้ในโค้ด</span>' : '<span class="badge s-cancelled">ยังไม่ผูก</span>'}</td>
+          <td>${!p.in_code ? '<span class="badge s-cancelled">ไม่มีฟังก์ชันใช้แล้ว</span>'
+            : p.deletable ? '<span class="badge s-assigned">สิทธิ์เสริม</span>' : '<span class="badge s-done">สิทธิ์หลัก</span>'}</td>
           <td>
-            <button class="ghost small" data-edit="${p.id}">แก้ไข</button>
-            ${p.in_code ? '' : `<button class="danger small" data-del="${p.id}">ลบ</button>`}
+            <button class="ghost small" data-edit="${p.id}">แก้คำอธิบาย</button>
+            ${p.deletable ? `<button class="danger small" data-del="${p.id}">ลบ</button>` : ''}
           </td>
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    <p class="muted">สิทธิ์ใหม่จะป้องกันอะไรจริงก็ต่อเมื่อ Route ในโค้ดตรวจด้วย requirePermission ชื่อนั้น ("ใช้ในโค้ด")</p>`;
+    <p class="muted">สิทธิ์หลักใช้กับฟังก์ชันพื้นฐานของระบบ ลบไม่ได้ · สิทธิ์เสริมลบได้ ลบแล้วฟังก์ชันนั้นปิดสำหรับทุก Role ทันที และเพิ่มคืนได้จากช่องด้านบน</p>`;
 
-  const add = (body) => run(() => api('/admin/permissions', { method: 'POST', body }), renderPermissions);
-  $('#permForm').onsubmit = (e) => { e.preventDefault(); add(formData(e.target)); };
+  $('#permForm').onsubmit = (e) => {
+    e.preventDefault();
+    const name = e.target.name.value;
+    run(() => api('/admin/permissions', { method: 'POST', body: { name, description: PERM[name]?.[1] || '' } }), renderPermissions);
+  };
 
   $('#content').onclick = async (e) => {
-    const quick = e.target.closest('[data-quick]');
-    if (quick) return add({ name: quick.dataset.quick, description: PERM[quick.dataset.quick]?.[1] || '' });
-
     const ed = e.target.closest('[data-edit]');
     if (ed) {
       const p = permissions.find((x) => String(x.id) === ed.dataset.edit);
       const v = await dialog({
         title: `แก้ไข Permission ${p.name}`,
-        intro: p.in_code ? 'สิทธิ์นี้ถูกใช้ในโค้ด เปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย' : '',
-        fields: [
-          ...(p.in_code ? [] : [{ name: 'name', label: 'ชื่อสิทธิ์', value: p.name, required: true, hint: 'รูปแบบ resource.action เช่น equipment.read' }]),
-          { name: 'description', label: 'คำอธิบาย', value: p.description || '' },
-        ],
+        intro: 'ชื่อสิทธิ์ต้องตรงกับที่โค้ดตรวจ จึงเปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย',
+        fields: [{ name: 'description', label: 'คำอธิบาย', value: p.description || '' }],
       });
       if (v) run(() => api(`/admin/permissions/${p.id}`, { method: 'PATCH', body: v }), renderPermissions);
       return;
     }
     const del = e.target.closest('[data-del]');
-    if (del && await confirmBox({ title: 'ลบ Permission', message: 'สิทธิ์นี้จะถูกถอนจากทุก Role ด้วย ต้องการดำเนินการต่อหรือไม่', ok: 'ลบ', danger: true })) {
+    if (del && await confirmBox({ title: 'ลบ Permission', message: 'สิทธิ์นี้จะถูกถอนจากทุก Role และฟังก์ชันที่ผูกอยู่จะใช้ไม่ได้ (เพิ่มคืนได้ภายหลัง) ต้องการดำเนินการต่อหรือไม่', ok: 'ลบ', danger: true })) {
       run(() => api(`/admin/permissions/${del.dataset.del}`, { method: 'DELETE' }), renderPermissions);
     }
   };

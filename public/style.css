@@ -4179,3 +4179,22 @@ dialog.img-view {
     grid-column: auto;
   }
 }
+
+/* แท็บ Permission: ช่องเลือกสิทธิ์ที่เพิ่มได้ + ปุ่มเพิ่ม (renderPermissions ใน admin.js) */
+.perm-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.perm-add label {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 280px;
+}
+
+.perm-add p {
+  flex-basis: 100%;
+  margin: 0;
+}

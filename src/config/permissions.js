@@ -1,7 +1,9 @@
 // =====================================================================
 // src/config/permissions.js — รายชื่อ Permission ที่โค้ดเรียกใช้ใน requirePermission จริง
-// CODE_PERMISSIONS: ห้ามลบหรือเปลี่ยนชื่อผ่านหน้าเว็บ (ถ้าลบ ฟังก์ชันที่ผูกอยู่จะใช้ไม่ได้)
-// Permission ที่ Admin เพิ่มใหม่ผ่านเว็บและไม่อยู่ในรายการนี้ ลบหรือเปลี่ยนชื่อได้ตามปกติ
+// CODE_PERMISSIONS: เพิ่มผ่านหน้าเว็บได้เฉพาะชื่อในรายการนี้ (มีฟังก์ชันรองรับแล้ว) และห้ามเปลี่ยนชื่อ
+//   สิทธิ์ที่เคยมีแล้วถูกลบไป กลับมาเพิ่มคืนได้จากรายการ "ยังไม่ได้เพิ่ม" ในแท็บ Permission
+// OPTIONAL_PERMISSIONS: สิทธิ์เสริมที่ลบผ่านเว็บได้ (ลบแล้วฟังก์ชันนั้นปิดสำหรับทุกคน เพิ่มคืนได้)
+//   สิทธิ์ที่เหลือเป็นสิทธิ์หลักของระบบ ลบผ่านเว็บไม่ได้
 // =====================================================================
 const CODE_PERMISSIONS = new Set([
   'request.create', 'request.read.own', 'request.read.dept', 'request.read.assigned', 'request.read.all',
@@ -12,6 +14,9 @@ const CODE_PERMISSIONS = new Set([
   'dashboard.view', 'category.manage', 'property.manage',
   'user.manage', 'role.manage', 'permission.manage', 'acl.manage', 'log.read',
 ]);
+
+// สิทธิ์เสริม: ใช้สาธิตเพิ่ม → กำหนดให้ Role → ถอน → ลบ Permission ผ่านเว็บ (โจทย์ข้อ 4.3, 6–7)
+const OPTIONAL_PERMISSIONS = new Set(['request.export']);
 
 // PROTECTED_ADMIN_PERMISSIONS: ห้ามถอนสิทธิ์เหล่านี้ออกจาก Role admin
 // กันไม่ให้ Admin ถอนสิทธิ์ตัวเองจนไม่มีใครเข้าหน้าจัดการระบบได้อีก
@@ -30,4 +35,4 @@ const ADMIN_AREA_PERMISSIONS = [
   'user.manage', 'role.manage', 'permission.manage', 'acl.manage', 'category.manage', 'property.manage', 'log.read',
 ];
 
-module.exports = { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES, ADMIN_AREA_PERMISSIONS };
+module.exports = { CODE_PERMISSIONS, OPTIONAL_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES, ADMIN_AREA_PERMISSIONS };

@@ -17,16 +17,14 @@ const { audit } = require('../logger');
 const { requirePermission, requireAnyPermission, invalidateUser } = require('../middleware/auth');
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
-const { CODE_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES } = require('../config/permissions');
+const { CODE_PERMISSIONS, OPTIONAL_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES } = require('../config/permissions');
 const { positionsFor } = require('../config/positions');
 
 const router = Router();
 
-// Regex ตรวจรูปแบบข้อมูลฝั่ง server: ชื่อผู้ใช้, ชื่อ Role (a-z และ _), ชื่อสิทธิ์ (resource.action)
+// Regex ตรวจรูปแบบข้อมูลฝั่ง server: ชื่อผู้ใช้, ชื่อ Role (a-z และ _)
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,50}$/;
 const ROLE_RE = /^[a-z][a-z_]{2,49}$/;
-// ชื่อสิทธิ์รูปแบบ resource.action เช่น equipment.read
-const PERM_RE = /^[a-z]+(\.[a-z_]+)+$/;
 
 function checkPassword(pw) {
   if (typeof pw !== 'string' || pw.length < 8) {
@@ -218,22 +216,30 @@ router.delete('/roles/:id', requirePermission('role.manage'), async (req, res) =
 
 // ===== Permission =====
 // GET /api/admin/permissions — รายการ Permission ทั้งหมด
-//   in_code = โค้ดตรวจสิทธิ์นี้ด้วย requirePermission จริง (ลบ/เปลี่ยนชื่อไม่ได้)
-//   missing = สิทธิ์ที่โค้ดรองรับแต่ยังไม่มีในฐานข้อมูล (เช่น request.export) Admin เพิ่มผ่านเว็บได้
+//   in_code = โค้ดตรวจสิทธิ์นี้ด้วย requirePermission จริง (เปลี่ยนชื่อไม่ได้)
+//   deletable = ลบผ่านเว็บได้ (สิทธิ์เสริม หรือสิทธิ์เก่าที่ไม่มีโค้ดใช้แล้ว)
+//   missing = สิทธิ์ที่โค้ดรองรับแต่ยังไม่มีในฐานข้อมูล (ยังไม่เคยเพิ่ม หรือเคยถูกลบ) เป็นตัวเลือกเดียวที่เพิ่มได้
 router.get('/permissions', requirePermission('permission.manage'), async (req, res) => {
   const { rows } = await db.query('SELECT id, name, description FROM permissions ORDER BY name');
   const names = new Set(rows.map((p) => p.name));
   res.json({
-    permissions: rows.map((p) => ({ ...p, in_code: CODE_PERMISSIONS.has(p.name) })),
+    permissions: rows.map((p) => ({
+      ...p, in_code: CODE_PERMISSIONS.has(p.name),
+      deletable: !CODE_PERMISSIONS.has(p.name) || OPTIONAL_PERMISSIONS.has(p.name),
+    })),
     missing: [...CODE_PERMISSIONS].filter((n) => !names.has(n)).sort(),
   });
 });
 
-// POST /api/admin/permissions — เพิ่ม Permission ใหม่ผ่านเว็บ แล้วให้ Role admin อัตโนมัติ (Admin ใช้ได้ทุกฟังก์ชันรวมถึงที่เพิ่มภายหลัง)
-// สิทธิ์ใหม่ป้องกันอะไรจริงก็ต่อเมื่อโค้ดตรวจด้วย requirePermission(ชื่อนั้น) เช่น request.export ใน routes/requests.js
+// POST /api/admin/permissions — เพิ่ม Permission ผ่านเว็บ แล้วให้ Role admin อัตโนมัติ (Admin ใช้ได้ทุกฟังก์ชันรวมถึงที่เพิ่มภายหลัง)
+// เพิ่มได้เฉพาะชื่อที่โค้ดตรวจด้วย requirePermission อยู่แล้ว (CODE_PERMISSIONS) เช่น request.export ใน routes/requests.js
+// กันการเพิ่มชื่อที่ไม่มีฟังก์ชันรองรับ ซึ่งจะไม่ได้ป้องกันอะไรจริง · ชื่อที่มีอยู่แล้วตอบ 409 (UNIQUE)
 router.post('/permissions', requirePermission('permission.manage'), async (req, res) => {
   const name = String(req.body.name ?? '').trim();
-  if (!PERM_RE.test(name)) throw new HttpError(400, 'ชื่อสิทธิ์รูปแบบ resource.action เช่น equipment.read');
+  if (!CODE_PERMISSIONS.has(name)) {
+    await audit(req, { eventType: 'permission_create', resourceType: 'permission', result: 'failure', detail: `${name.slice(0, 60)} (no code support)` });
+    throw new HttpError(400, 'เพิ่มได้เฉพาะสิทธิ์ที่ระบบมีฟังก์ชันรองรับแล้ว (เลือกจากรายการ)');
+  }
   const p = await withTransaction(async (client) => {
     const { rows: [created] } = await client.query(
       'INSERT INTO permissions (name, description) VALUES ($1, $2) RETURNING *', [name, optText(req.body.description)]);
@@ -247,31 +253,33 @@ router.post('/permissions', requirePermission('permission.manage'), async (req, 
   res.status(201).json(p);
 });
 
-// PATCH /api/admin/permissions/:id — แก้คำอธิบายได้เสมอ แต่ห้ามเปลี่ยนชื่อสิทธิ์ที่โค้ดใช้อยู่ (CODE_PERMISSIONS)
+// PATCH /api/admin/permissions/:id — แก้ได้เฉพาะคำอธิบาย ห้ามเปลี่ยนชื่อ
+// (ชื่อต้องตรงกับที่โค้ดตรวจ เปลี่ยนชื่อจะทำให้ฟังก์ชันใช้ไม่ได้ หรือกลายเป็นชื่อที่ไม่มีฟังก์ชันรองรับ)
 router.patch('/permissions/:id', requirePermission('permission.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM permissions WHERE id = $1', [id]);
   if (!cur) throw new HttpError(404, 'ไม่พบ Permission');
 
-  const name = req.body.name !== undefined ? String(req.body.name).trim() : cur.name;
-  if (!PERM_RE.test(name)) throw new HttpError(400, 'ชื่อสิทธิ์ไม่ถูกต้อง');
-  if (name !== cur.name && CODE_PERMISSIONS.has(cur.name)) {
-    throw new HttpError(409, 'แก้ชื่อสิทธิ์ที่ใช้ในโค้ดไม่ได้');
+  if (req.body.name !== undefined && String(req.body.name).trim() !== cur.name) {
+    throw new HttpError(409, 'เปลี่ยนชื่อสิทธิ์ไม่ได้ แก้ได้เฉพาะคำอธิบาย');
   }
   const description = req.body.description !== undefined ? optText(req.body.description) : cur.description;
 
   const { rows: [p] } = await db.query(
-    'UPDATE permissions SET name = $1, description = $2 WHERE id = $3 RETURNING *', [name, description, id]);
-  await audit(req, { eventType: 'permission_update', resourceType: 'permission', resourceId: id, result: 'success', detail: `${cur.name}->${name}` });
+    'UPDATE permissions SET description = $1 WHERE id = $2 RETURNING *', [description, id]);
+  await audit(req, { eventType: 'permission_update', resourceType: 'permission', resourceId: id, result: 'success', detail: `${cur.name} description` });
   res.json(p);
 });
 
-// DELETE /api/admin/permissions/:id — ลบได้เฉพาะสิทธิ์ที่ไม่ได้ใช้ในโค้ด แถวใน role_permissions ถูกลบตาม (CASCADE)
+// DELETE /api/admin/permissions/:id — ลบได้เฉพาะสิทธิ์เสริม (OPTIONAL_PERMISSIONS) หรือสิทธิ์ที่ไม่มีโค้ดใช้
+// แถวใน role_permissions ถูกลบตาม (CASCADE) ฟังก์ชันที่ผูกอยู่จึงปิดสำหรับทุกคนทันที และเพิ่มคืนได้ในแท็บ Permission
 router.delete('/permissions/:id', requirePermission('permission.manage'), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows: [cur] } = await db.query('SELECT * FROM permissions WHERE id = $1', [id]);
   if (!cur) throw new HttpError(404, 'ไม่พบ Permission');
-  if (CODE_PERMISSIONS.has(cur.name)) throw new HttpError(409, 'สิทธิ์นี้ถูกใช้ในโค้ด ลบไม่ได้');
+  if (CODE_PERMISSIONS.has(cur.name) && !OPTIONAL_PERMISSIONS.has(cur.name)) {
+    throw new HttpError(409, 'สิทธิ์หลักของระบบ ลบไม่ได้');
+  }
 
   await db.query('DELETE FROM permissions WHERE id = $1', [id]);
   invalidateUser(); // ล้าง cache สิทธิ์ของทุกคน ให้มีผลทันที

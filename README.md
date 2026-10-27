@@ -37,12 +37,12 @@ Node.js + Express + PostgreSQL · Session (เก็บใน PostgreSQL) · RBA
 
 ## สาธิตการเพิ่ม/ยกเลิก Permission (โจทย์ข้อ 6–7)
 ฟังก์ชัน "ส่งออก CSV" (`GET /api/requests/export`) ตรวจสิทธิ์ `request.export` ซึ่งไม่ได้สร้างไว้ตอนติดตั้ง
-1. Admin → แท็บ Permission → กด `+ request.export` (Admin ได้สิทธิ์ทันที)
+1. Admin → แท็บ Permission → ช่อง "เพิ่ม Permission" เลือก `request.export` → กดเพิ่ม (Admin ได้สิทธิ์ทันที)
+   (ช่องนี้เลือกได้เฉพาะสิทธิ์ที่ระบบมีฟังก์ชันรองรับ เพิ่มชื่ออื่นที่ไม่มีฟังก์ชันไม่ได้)
 2. แท็บ สิทธิ์ (ACL) → ติ๊ก `request.export` ให้ Role หัวหน้าฝ่าย
 3. เข้าสู่ระบบ head01 → ปุ่ม "ส่งออก CSV" ปรากฏในรายการแจ้งเรื่องและดาวน์โหลดได้
 4. Admin เอาติ๊กออก → head01 กดปุ่มเดิมถูกปฏิเสธ (403) และเรียก `/api/requests/export` ตรงๆ ก็ถูกปฏิเสธ โดยไม่ต้องรีสตาร์ต server
-5. แท็บ Log กรองประเภท `permission_grant`, `permission_revoke`, `access_denied` เพื่อดูหลักฐาน
+5. แท็บ Permission → กด "ลบ" ที่ `request.export` (สิทธิ์เสริม) → ปุ่มส่งออกหายจากทุก Role และกลับมาเพิ่มคืนได้ในข้อ 1
+6. แท็บ Log กรองประเภท `permission_create`, `permission_grant`, `permission_revoke`, `permission_delete`, `access_denied` เพื่อดูหลักฐาน
 
-ต้องการสาธิตซ้ำ (เช่น แคปภาพลงสไลด์ไว้ก่อน แล้วสาธิตสดอีกครั้ง): รัน `npm run demo:reset`
-สคริปต์จะลบ `request.export` ออกจากฐานข้อมูลตามค่า `DATABASE_URL` ใน `.env` และบันทึก Log ว่ารีเซ็ต
-(หน้าเว็บลบสิทธิ์นี้ไม่ได้ เพราะเป็นสิทธิ์ที่โค้ดใช้อยู่)
+ต้องการสาธิตซ้ำ: ลบ `request.export` ผ่านเว็บตามข้อ 5 หรือรัน `npm run demo:reset` (ลบผ่านฐานข้อมูลตาม `DATABASE_URL` ใน `.env` และบันทึก Log)
