@@ -368,12 +368,12 @@ async function renderRoles() {
   $('#content').innerHTML = `
     <form id="roleForm" class="row wrap">
       <input name="name" placeholder="ชื่อ Role เช่น viewer" required>
-      <input name="description" placeholder="คำอธิบาย">
+      <input name="description" placeholder="ชื่อภาษาไทย เช่น ผู้ประกาศข่าว">
       <button>เพิ่ม Role</button>
     </form>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ชื่อ</th><th>คำอธิบาย</th><th>จำนวนผู้ใช้</th><th></th></tr></thead>
+        <thead><tr><th>ชื่อ</th><th>ชื่อภาษาไทย / คำอธิบาย</th><th>จำนวนผู้ใช้</th><th></th></tr></thead>
         <tbody>${roles.map((r) => `<tr>
           <td><code>${esc(r.name)}</code>${r.in_code ? ' <span class="role">Role หลัก</span>' : ''}</td>
           <td>${esc(r.description)}</td>
@@ -402,7 +402,7 @@ async function renderRoles() {
         intro: r.in_code ? 'Role หลักที่ระบบใช้ เปลี่ยนชื่อไม่ได้ แก้ได้เฉพาะคำอธิบาย' : '',
         fields: [
           ...(r.in_code ? [] : [{ name: 'name', label: 'ชื่อ Role', value: r.name, required: true, hint: 'a-z และ _ ความยาว 3-50 ตัวอักษร' }]),
-          { name: 'description', label: 'คำอธิบาย', value: r.description || '' },
+          { name: 'description', label: 'ชื่อภาษาไทย (แสดงในหน้า ACL และหน้าผู้ใช้)', value: r.description || '' },
         ],
       });
       if (v) run(() => api(`/admin/roles/${r.id}`, { method: 'PATCH', body: v }), renderRoles);
@@ -499,6 +499,8 @@ const PERM = {
 };
 const PERM_GROUPS = ['งานแจ้งซ่อม', 'ประกาศ', 'ไฟล์แนบ', 'รายงานและบันทึก', 'จัดการระบบ', 'อื่นๆ'];
 const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าแผนก', technician: 'เจ้าหน้าที่ช่าง', resident: 'ลูกบ้าน' };
+// roleLabel: ชื่อไทยของ Role — Role ที่มากับระบบใช้ ROLE_TH, Role ที่เพิ่มผ่านเว็บใช้ "คำอธิบาย" ที่กรอกไว้ (ไม่มีก็ใช้ชื่อ Role)
+const roleLabel = (r) => ROLE_TH[r.name] || r.description || r.name;
 const LOCKOUT = ['acl.manage', 'user.manage', 'permission.manage'];
 
 // แท็บ ACL: ตาราง Role (คอลัมน์) × Permission (แถว) แต่ละช่องคือ checkbox
@@ -516,7 +518,7 @@ async function renderAcl() {
         <code title="ชื่อที่ใช้ในโค้ด">${esc(p.name)}</code></td>
       ${roles.map((r) => `<td><input type="checkbox" data-role="${r.id}" data-perm="${p.id}"
         data-rname="${esc(r.name)}" data-pname="${esc(p.name)}"
-        aria-label="${esc(ROLE_TH[r.name] || r.name)}: ${esc(label)}"
+        aria-label="${esc(roleLabel(r))}: ${esc(label)}"
         ${granted.has(`${r.id}-${p.id}`) ? 'checked' : ''}></td>`).join('')}
     </tr>`;
   };
@@ -532,7 +534,7 @@ async function renderAcl() {
     <div class="table-wrap acl-wrap">
       <table class="matrix">
         <thead><tr><th>ทำอะไรได้บ้าง</th>${roles.map((r) =>
-          `<th>${esc(ROLE_TH[r.name] || r.name)}<small>${esc(r.name)}</small></th>`).join('')}</tr></thead>
+          `<th>${esc(roleLabel(r))}<small>${esc(r.name)}</small></th>`).join('')}</tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>

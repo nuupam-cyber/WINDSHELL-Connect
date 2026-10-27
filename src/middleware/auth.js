@@ -24,6 +24,7 @@ async function loadUser(userId) {
 
   const { rows } = await db.query(
     `SELECT u.id, u.username, u.name, u.position, u.role_id, u.department_id, u.unit_id, u.is_active, r.name AS role,
+            r.description AS role_description,
             COALESCE((SELECT array_agg(p.name) FROM role_permissions rp
                       JOIN permissions p ON p.id = rp.permission_id
                       WHERE rp.role_id = u.role_id), '{}') AS perms

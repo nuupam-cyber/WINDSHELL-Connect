@@ -69,6 +69,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // deniedPage: หน้า HTML แจ้งว่าไม่มีสิทธิ์เข้าหน้า Admin พร้อมชื่อบัญชีและ Role ของผู้ที่พยายามเข้า
 // (ใช้กับการเปิดหน้าเว็บ ส่วน API ยังตอบ JSON { error } ตามเดิม) esc() กันชื่อที่มีอักขระ HTML
+// ชื่อบทบาท: Role ที่มากับระบบใช้ ROLE_TH ส่วน Role ที่เพิ่มผ่านเว็บใช้คำอธิบายของ Role
 const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าฝ่าย', technician: 'ช่าง/เจ้าหน้าที่', resident: 'ลูกบ้าน' };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const deniedPage = (u) => `<!doctype html><html lang="th"><head><meta charset="utf-8">
@@ -81,7 +82,7 @@ dt{color:#6b7a83}dd{margin:0;font-weight:600}a{color:#0f6d6d}</style></head><bod
 <h1>403 · ไม่มีสิทธิ์เข้าถึงหน้า Admin</h1>
 <p>บัญชีนี้ไม่มีสิทธิ์ <code>user.manage</code> ระบบได้บันทึกการพยายามเข้าถึงครั้งนี้ไว้ใน Log แล้ว</p>
 <dl><dt>ชื่อ</dt><dd>${esc(u.name)}</dd><dt>บัญชี</dt><dd>${esc(u.username)}</dd>
-<dt>บทบาท</dt><dd>${esc(ROLE_TH[u.role] || u.role)}</dd><dt>เวลา</dt>
+<dt>บทบาท</dt><dd>${esc(ROLE_TH[u.role] || u.role_description || u.role)}</dd><dt>เวลา</dt>
 <dd>${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</dd></dl>
 <a href="/">← กลับหน้าหลัก</a></div></body></html>`;
 

@@ -25,7 +25,7 @@ async function openAccount(onChanged) {
     <h2>บัญชีของฉัน</h2>
     <dl class="acc-info">
       <dt>ชื่อผู้ใช้</dt><dd>${esc(u.username)}</dd>
-      <dt>บทบาท</dt><dd>${esc(ROLE[u.role] || u.role)}</dd>
+      <dt>บทบาท</dt><dd>${esc(ROLE[u.role] || u.role_description || u.role)}</dd>
       ${u.position ? `<dt>ตำแหน่ง</dt><dd>${esc(u.position)}</dd>` : ''}
     </dl>
     <form id="accName" novalidate>

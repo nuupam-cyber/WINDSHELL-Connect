@@ -148,7 +148,8 @@ function renderShell() {
   if (!me) return;
   const shownName = me.name;
   $('#userName').textContent = shownName;
-  const [roleName, scope] = ROLE[me.role] || [me.role, ''];
+  // Role ที่เพิ่มผ่านเว็บไม่มีใน ROLE ใช้คำอธิบายของ Role เป็นชื่อไทยแทน
+  const [roleName, scope] = ROLE[me.role] || [me.role_description || me.role, ''];
   const sub = me.position || roleName;
   $('#userRole').textContent = sub;
   $('#userRole').classList.toggle('hidden', sub === shownName);

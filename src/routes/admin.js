@@ -273,7 +273,7 @@ router.delete('/permissions/:id', requirePermission('permission.manage'), async 
 // GET /api/admin/acl — ข้อมูลสำหรับวาดตาราง ACL: Role ทั้งหมด, Permission ทั้งหมด, คู่ที่ติ๊กไว้ (grants)
 router.get('/acl', requirePermission('acl.manage'), async (req, res) => {
   const [roles, permissions, grants] = await Promise.all([
-    db.query('SELECT id, name FROM roles ORDER BY id'),
+    db.query('SELECT id, name, description FROM roles ORDER BY id'),
     db.query('SELECT id, name FROM permissions ORDER BY name'),
     db.query('SELECT role_id, permission_id FROM role_permissions'),
   ]);
