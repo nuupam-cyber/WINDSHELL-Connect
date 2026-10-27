@@ -109,6 +109,24 @@ function dialog({ title, intro = '', fields = [], submit = 'บันทึก',
 const confirmBox = ({ title, message, ok = 'ยืนยัน', danger = false }) =>
   dialog({ title, intro: message, submit: ok, danger }).then((r) => r !== null);
 
+// showImage: ป๊อปอัปดูรูปไฟล์แนบ (<dialog>) ปิดได้ด้วยปุ่ม ×, กด Esc หรือคลิกพื้นหลังนอกรูป
+// รูปโหลดจาก /api/attachments/:id ซึ่ง server ตรวจสิทธิ์และบันทึก Log การเปิดดูเหมือนเปิดแท็บใหม่
+function showImage(src, name) {
+  const d = document.createElement('dialog');
+  d.className = 'dlg img-view';
+  d.innerHTML = `
+    <div class="img-view-head"><span>${esc(name)}</span>
+      <button type="button" class="link-btn" data-close aria-label="ปิด">×</button></div>
+    <img src="${src}" alt="${esc(name)}">
+    <a class="small" href="${src}" target="_blank" rel="noopener">เปิดขนาดเต็มในแท็บใหม่</a>`;
+  document.body.appendChild(d);
+  d.querySelector('[data-close]').onclick = () => d.close();
+  // คลิกโดนตัว dialog เอง (คือพื้นหลังรอบกล่อง) ให้ปิด
+  d.onclick = (e) => { if (e.target === d) d.close(); };
+  d.addEventListener('close', () => d.remove());
+  d.showModal();
+}
+
 // toast: ข้อความแจ้งเล็กๆ มุมจอ หายเองใน 4.5 วินาที
 function toast(msg, kind = 'info') {
   const t = document.createElement('div');
@@ -542,7 +560,7 @@ async function openDetail(id) {
 
     <h3>ไฟล์แนบ</h3>
     <ul class="files" id="fileList">${(r.attachments || []).map((f) => `
-      <li><a href="/api/attachments/${f.id}" target="_blank" rel="noopener">${esc(f.original_name)}</a>
+      <li><a href="/api/attachments/${f.id}" target="_blank" rel="noopener"${f.mime_type.startsWith('image/') ? ` data-preview="${f.id}"` : ''}>${esc(f.original_name)}</a>
         <span class="muted small">${fmtSize(f.size_bytes)}</span>
         <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
         ${f.can_delete ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
@@ -585,8 +603,15 @@ ${showWorkNote ? `<label class="note-field">รายละเอียดงา
     }
   };
 
-  // ตัวจัดการคลิกทั้งหน้ารายละเอียด: ปุ่มลบไฟล์, ลบเรื่อง, และปุ่มเปลี่ยนสถานะ (data-act)
+  // ตัวจัดการคลิกทั้งหน้ารายละเอียด: ดูรูปแบบป๊อปอัป, ปุ่มลบไฟล์, ลบเรื่อง, และปุ่มเปลี่ยนสถานะ (data-act)
   $('#detail').onclick = async (e) => {
+    // ลิงก์รูปภาพ (data-preview) เปิดเป็นป๊อปอัปในหน้าเดิม ไม่เปิดแท็บใหม่ ส่วน PDF ยังเปิดแท็บใหม่ตามปกติ
+    const pv = e.target.closest('[data-preview]');
+    if (pv) {
+      e.preventDefault();
+      showImage(pv.getAttribute('href'), pv.textContent);
+      return;
+    }
     const del = e.target.closest('[data-delfile]');
     if (del) {
       if (!(await confirmBox({ title: 'ลบไฟล์แนบ', message: 'ไฟล์นี้จะถูกลบถาวร ต้องการดำเนินการต่อหรือไม่', ok: 'ลบไฟล์', danger: true }))) return;

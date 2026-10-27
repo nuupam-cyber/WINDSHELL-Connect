@@ -4044,3 +4044,35 @@ html[data-theme="dark"] .side-foot a,html[data-theme="dark"] .side-foot button {
 #pickBtn {
   margin-top: 6px;
 }
+
+/* ป๊อปอัปดูรูปไฟล์แนบ (showImage ใน app.js) */
+dialog.img-view {
+  width: auto;
+  max-width: min(720px,calc(100vw - 32px));
+  padding: 12px 16px 14px;
+  text-align: center;
+}
+
+.img-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  text-align: left;
+  word-break: break-all;
+}
+
+.img-view-head button {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.img-view img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto 8px;
+  border-radius: 6px;
+}
