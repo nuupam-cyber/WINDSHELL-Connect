@@ -44,9 +44,9 @@ function renderShell() {
   $('#app').classList.toggle('hidden', !me);
   if (!me) return;
   $('#userName').textContent = me.name;
-  $('#hello').textContent = 'สวัสดี ' + me.name;
   const [roleName, scope] = ROLE[me.role] || [me.role, ''];
   $('#userRole').textContent = roleName;
+  $('#userRole').classList.toggle('hidden', roleName === me.name);
   $('#scopeNote').textContent = 'กำลังแสดง: ' + scope;
   document.querySelector('.work-grid').classList.toggle('solo', !can('request.create'));
   $('#adminLink').classList.toggle('hidden', !can('user.manage'));
@@ -234,10 +234,10 @@ async function openDetail(id) {
 
   const acts = [];
   if (r.status === 'pending' && can('request.approve')) acts.push(['reject', 'ไม่อนุมัติ', 'danger']);
-  if (r.status === 'pending' && can('request.assign')) acts.push(['assign', 'อนุมัติและมอบหมายผู้รับผิดชอบ', '']);
-  if (r.status === 'assigned' && can('request.update_status') && mine('technician_id')) acts.push(['start', 'เริ่มดำเนินการ', '']);
-  if (r.status === 'in_progress' && can('request.update_status') && mine('technician_id')) acts.push(['complete', 'ดำเนินการเสร็จ', '']);
-  if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', '']);
+  if (r.status === 'pending' && can('request.assign')) acts.push(['assign', 'อนุมัติและมอบหมายผู้รับผิดชอบ', 'ok']);
+  if (r.status === 'assigned' && can('request.update_status') && mine('technician_id')) acts.push(['start', 'เริ่มดำเนินการ', 'info']);
+  if (r.status === 'in_progress' && can('request.update_status') && mine('technician_id')) acts.push(['complete', 'ดำเนินการเสร็จ', 'ok']);
+  if (r.status === 'done' && can('request.close') && mine('requester_id')) acts.push(['confirm', 'ยืนยันปิดเรื่อง', 'ok']);
   if (r.status === 'pending' && can('request.cancel.own') && mine('requester_id')) acts.push(['cancel', 'ยกเลิกคำขอ', 'ghost']);
 
   $('#detail').innerHTML = `
@@ -433,7 +433,7 @@ async function loadAnnouncements() {
               <span class="row">
                 <span class="badge">${ANN_LABEL[a.type]}</span>
                 ${can('announcement.manage')
-                  ? `<button class="ghost small" data-ann-cancel="${a.id}">ยกเลิก</button>` : ''}
+                  ? `<button class="ghost small cancel" data-ann-cancel="${a.id}">ยกเลิก</button>` : ''}
               </span>
             </div>
             <div class="muted small">🕒 ${fmtDate(a.starts_at)} – ${fmtDate(a.ends_at)} · โดย ${esc(a.author)}</div>

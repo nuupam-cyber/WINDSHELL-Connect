@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WINDSHELL Connect | WINDSHELL Naradhiwass</title>
+  <title>WINDSHELL Connect</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6b6f'/%3E%3Cpath d='M5 11c4-4 8 4 12 0s5-3 10 0M5 17c4-4 8 4 12 0s5-3 10 0M5 23c4-4 8 4 12 0s5-3 10 0' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
@@ -84,15 +84,14 @@
             <div id="notifList"></div>
           </div>
         </div>
-        <span id="userName" class="muted"></span>
-        <span id="userRole" class="role"></span>
-        <a id="adminLink" class="btn ghost hidden" href="/admin">จัดการระบบ</a>
-        <button id="logoutBtn" class="ghost">ออกจากระบบ</button>
+        <div class="me"><span id="userName"></span><span id="userRole"></span></div>
+        <a id="adminLink" class="btn admin hidden" href="/admin"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>จัดการระบบ</a>
+        <button id="logoutBtn" class="ghost logout" title="ออกจากระบบ"><svg class="i" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>ออกจากระบบ</span></button>
       </div>
     </header>
 
     <main class="container">
-      <div class="hello"><h1 id="hello"></h1><span id="scopeNote" class="muted"></span></div>
+      <div class="hello"><h1>ภาพรวมเรื่องแจ้งซ่อม</h1><span id="scopeNote" class="muted"></span></div>
       <div id="summary" class="summary"></div>
 
       <div class="card ann-card">
@@ -169,7 +168,7 @@
           <label><span id="descLabel">รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
             <textarea id="descInput" name="description" rows="3" maxlength="1000"></textarea>
           </label>
-          <button type="submit">ส่งคำขอ</button>
+          <button type="submit" class="send">ส่งคำขอ</button>
           <p id="createMsg" class="muted"></p>
         </form>
       </div>

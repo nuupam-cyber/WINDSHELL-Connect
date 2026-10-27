@@ -5,6 +5,7 @@ require('express-async-errors');
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const db = require('./db');
 const { authenticate, requirePermission } = require('./middleware/auth');
 
 const app = express();
@@ -16,8 +17,17 @@ app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. Session
+// 3. Session: เก็บใน Postgres เพื่อไม่ให้ผู้ใช้ถูกเด้งออกทุกครั้งที่ server restart/deploy
+// (ต้อง npm install connect-pg-simple; ถ้ายังไม่ติดตั้งจะใช้ MemoryStore ไปก่อน)
+let store;
+try {
+  const PgStore = require('connect-pg-simple')(session);
+  store = new PgStore({ pool: db.pool, createTableIfMissing: true });
+} catch (e) {
+  console.warn('ใช้ MemoryStore เพราะ:', e.message);
+}
 app.use(session({
+  store,
   name: 'sid', // ให้ตรงกับ res.clearCookie('sid') ใน routes/auth.js
   secret: process.env.SESSION_SECRET || 'default_secret_key',
   resave: false,
@@ -60,6 +70,7 @@ loadRoute('./routes/auth', '/api/auth');
 
 // ต้องล็อกอินก่อน
 loadRoute('./routes/requests', '/api/requests', authenticate);
+loadRoute('./routes/admin-extra', '/api/admin', authenticate); // ตั้งรหัสผ่านใหม่
 loadRoute('./routes/admin', '/api/admin', authenticate);
 loadRoute('./routes/announcements', '/api/announcements', authenticate);
 loadRoute('./routes/notifications', '/api/notifications', authenticate);

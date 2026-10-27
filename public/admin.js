@@ -9,8 +9,16 @@ async function api(path, opts = {}) {
   }
   const res = await fetch('/api' + path, init);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+  if (!res.ok) throw new Error(data.error || data.message || 'เกิดข้อผิดพลาด');
   return data;
+}
+const STATUS = { pending: 'รอพิจารณา', assigned: 'มอบหมายแล้ว', in_progress: 'กำลังดำเนินการ', done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก' };
+function toast(msg, kind = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4500);
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -18,11 +26,11 @@ const fmtDate = (d) => new Date(d).toLocaleString('th-TH', { dateStyle: 'short',
 const formData = (f) => Object.fromEntries(new FormData(f));
 const nullable = (v) => (v === '' || v == null ? null : Number(v));
 const run = async (fn, after) => {
-  try { await fn(); } catch (e) { alert(e.message); }
+  try { await fn(); } catch (e) { toast(e.message, 'error'); }
   if (after) after();
 };
 
-const views = { users: renderUsers, roles: renderRoles, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
+const views = { overview: renderOverview, users: renderUsers, roles: renderRoles, acl: renderAcl, categories: renderCategories, property: renderProperty, logs: renderLogs };
 
 function openTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
@@ -36,6 +44,66 @@ $('#logoutBtn').onclick = async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.href = '/';
 };
+
+// ===== ภาพรวม =====
+function exportCsv(rows) {
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const head = ['เลขที่', 'ประเภท', 'ความเร่งด่วน', 'สถานที่', 'ผู้แจ้ง', 'ผู้รับผิดชอบ', 'สถานะ', 'วันที่แจ้ง'];
+  const lines = rows.map((r) => [r.id, r.category, r.priority === 'urgent' ? 'ด่วน' : 'ปกติ', r.location,
+    r.requester_name, r.technician_name || '', STATUS[r.status] || r.status, new Date(r.created_at).toLocaleString('th-TH-u-ca-gregory')].map(q).join(','));
+  const blob = new Blob(['\ufeff' + [head.map(q).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `repair-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function renderOverview() {
+  const [st, users, roles] = await Promise.all([api('/requests/stats'), api('/admin/users'), api('/admin/roles')]);
+  const n = (s) => st.byStatus.find((x) => x.status === s)?.n ?? 0;
+  const total = st.byStatus.reduce((a, x) => a + x.n, 0);
+  const active = users.filter((u) => u.is_active).length;
+  const roleName = Object.fromEntries(roles.map((r) => [r.id, r.name]));
+  const perRole = {};
+  users.forEach((u) => { const k = roleName[u.role_id] || '-'; perRole[k] = (perRole[k] || 0) + 1; });
+  const maxR = Math.max(1, ...Object.values(perRole));
+  const card = (v, l, c = '') => `<div class="stat ${c}"><b>${v}</b><span>${l}</span></div>`;
+
+  $('#content').innerHTML = `
+    <h2>ภาพรวมระบบ</h2>
+    <div class="stat-grid">
+      ${card(`${active}<small>/${users.length}</small>`, 'ผู้ใช้ที่เปิดใช้งาน')}
+      ${card(total, 'เรื่องแจ้งซ่อมทั้งหมด')}
+      ${card(n('pending'), 'รอพิจารณา', 'st-open')}
+      ${card(st.urgentOpen, 'ด่วนที่ยังค้าง', 'st-urgent')}
+    </div>
+    <div class="dash-cols">
+      <div>
+        <h3>ผู้ใช้แยกตาม Role</h3>
+        ${Object.entries(perRole).map(([k, v]) => `<div class="bar-row"><span>${esc(k)}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${(v / maxR) * 100}%"></div></div><b>${v}</b></div>`).join('')}
+      </div>
+      <div>
+        <h3>ทางลัด</h3>
+        <div class="quick">
+          <button data-go="users">+ เพิ่มผู้ใช้</button>
+          <button class="ghost" data-go="categories">จัดการประเภทงาน</button>
+          <button class="ghost" data-go="property">จัดการห้อง/พื้นที่</button>
+          <button class="ghost" data-go="logs">ดู Log ล่าสุด</button>
+          <button class="export" data-export>ส่งออกรายการแจ้งซ่อม (CSV)</button>
+        </div>
+      </div>
+    </div>`;
+
+  $('#content').onclick = (e) => {
+    const go = e.target.closest('[data-go]');
+    if (go) return openTab(go.dataset.go);
+    if (e.target.closest('[data-export]')) {
+      run(async () => exportCsv(await api('/requests')));
+    }
+  };
+}
 
 // ===== ผู้ใช้ =====
 async function renderUsers() {
@@ -58,7 +126,10 @@ async function renderUsers() {
       <button>เพิ่มผู้ใช้</button>
     </form>
 
-    <h2 class="mt">ผู้ใช้ทั้งหมด</h2>
+    <div class="row between wrap mt" style="margin-bottom:12px">
+      <h2 style="margin:0">ผู้ใช้ทั้งหมด</h2>
+      <input id="userSearch" type="search" placeholder="ค้นหาชื่อผู้ใช้หรือชื่อ" style="width:240px" aria-label="ค้นหาผู้ใช้">
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ</th><th>Role</th><th>ฝ่าย</th><th>สถานะ</th><th></th></tr></thead>
@@ -69,7 +140,8 @@ async function renderUsers() {
           <td><select data-field="department_id" data-id="${u.id}">${deptOpts(u.department_id)}</select></td>
           <td><span class="badge ${u.is_active ? 's-done' : 's-cancelled'}">${u.is_active ? 'ใช้งาน' : 'ปิดแล้ว'}</span></td>
           <td><button class="ghost small" data-toggle="${u.id}" data-active="${u.is_active}">
-            ${u.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button></td>
+            ${u.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button>
+            <button class="ghost small key" data-reset="${u.id}" data-name="${esc(u.username)}">ตั้งรหัสผ่านใหม่</button></td>
         </tr>`).join('')}</tbody>
       </table>
     </div>`;
@@ -90,7 +162,22 @@ async function renderUsers() {
     }), renderUsers);
   };
 
+  $('#userSearch').oninput = (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#content tbody tr').forEach((tr) => {
+      tr.hidden = !!q && !(tr.children[0].textContent + tr.children[1].textContent).toLowerCase().includes(q);
+    });
+  };
+
   $('#content').onclick = (e) => {
+    const r = e.target.closest('[data-reset]');
+    if (r) {
+      const pw = prompt(`ตั้งรหัสผ่านใหม่ให้ ${r.dataset.name} (อย่างน้อย 8 ตัวอักษร)`);
+      if (!pw) return;
+      run(() => api(`/admin/users/${r.dataset.reset}/password`, { method: 'POST', body: { password: pw } })
+        .then(() => toast('ตั้งรหัสผ่านใหม่แล้ว')));
+      return;
+    }
     const b = e.target.closest('[data-toggle]');
     if (!b) return;
     run(() => api(`/admin/users/${b.dataset.toggle}`, {
@@ -137,45 +224,99 @@ async function renderRoles() {
 }
 
 // ===== ACL: Role × Permission =====
+const PERM = {
+  'request.create': ['งานแจ้งซ่อม', 'แจ้งเรื่องซ่อมใหม่', 'ลูกบ้านกรอกฟอร์มแจ้งเรื่อง'],
+  'request.approve': ['งานแจ้งซ่อม', 'อนุมัติหรือไม่อนุมัติเรื่อง', 'เฉพาะเรื่องในแผนกของตัวเอง'],
+  'request.assign': ['งานแจ้งซ่อม', 'มอบหมายงานให้ช่าง', 'เลือกผู้รับผิดชอบเมื่ออนุมัติ'],
+  'request.update_status': ['งานแจ้งซ่อม', 'เริ่มงานและกดเสร็จงาน', 'เฉพาะงานที่ได้รับมอบหมาย'],
+  'request.close': ['งานแจ้งซ่อม', 'ยืนยันปิดเรื่อง', 'ผู้แจ้งตรวจรับงานแล้วปิดเรื่อง'],
+  'request.cancel.own': ['งานแจ้งซ่อม', 'ยกเลิกเรื่องของตัวเอง', 'ยกเลิกได้ขณะยังรอพิจารณา'],
+  'announcement.read': ['ประกาศ', 'อ่านประกาศ'],
+  'announcement.manage': ['ประกาศ', 'สร้างและยกเลิกประกาศ'],
+  'attachment.upload': ['ไฟล์แนบและความคิดเห็น', 'อัปโหลดไฟล์แนบ'],
+  'attachment.read': ['ไฟล์แนบและความคิดเห็น', 'เปิดดูไฟล์แนบ'],
+  'attachment.delete': ['ไฟล์แนบและความคิดเห็น', 'ลบไฟล์แนบ'],
+  'comment.create': ['ไฟล์แนบและความคิดเห็น', 'เขียนความคิดเห็น'],
+  'dashboard.view': ['รายงานและบันทึก', 'ดูภาพรวมงาน', 'กราฟและตัวเลขสถิติ'],
+  'log.read': ['รายงานและบันทึก', 'ดู Log การใช้งาน', 'ใครทำอะไรเมื่อไหร่'],
+  'user.manage': ['จัดการระบบ', 'จัดการผู้ใช้', 'เข้าหน้า "จัดการระบบ" ได้'],
+  'category.manage': ['จัดการระบบ', 'จัดการประเภทงาน'],
+  'property.manage': ['จัดการระบบ', 'จัดการห้องและพื้นที่ส่วนกลาง'],
+  'acl.manage': ['จัดการระบบ', 'กำหนดสิทธิ์ของแต่ละบทบาท', 'หน้านี้'],
+  'permission.manage': ['จัดการระบบ', 'เพิ่มรายการสิทธิ์ใหม่'],
+  'role.manage': ['จัดการระบบ', 'จัดการบทบาท'],
+};
+const PERM_GROUPS = ['งานแจ้งซ่อม', 'ประกาศ', 'ไฟล์แนบและความคิดเห็น', 'รายงานและบันทึก', 'จัดการระบบ', 'อื่นๆ'];
+const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dept_head: 'หัวหน้าแผนก', technician: 'เจ้าหน้าที่ช่าง', resident: 'ลูกบ้าน' };
+const LOCKOUT = ['acl.manage', 'user.manage', 'permission.manage'];
+
 async function renderAcl() {
   const { roles, permissions, grants } = await api('/admin/acl');
   const granted = new Set(grants.map((g) => `${g.role_id}-${g.permission_id}`));
+  const info = (p) => PERM[p.name] || ['อื่นๆ', p.description || p.name, ''];
+
+  const row = (p) => {
+    const [, label, hint] = info(p);
+    return `<tr>
+      <td><b>${esc(label)}</b>${hint ? `<div class="muted small">${esc(hint)}</div>` : ''}
+        <code title="ชื่อที่ใช้ในโค้ด">${esc(p.name)}</code></td>
+      ${roles.map((r) => `<td><input type="checkbox" data-role="${r.id}" data-perm="${p.id}"
+        data-rname="${esc(r.name)}" data-pname="${esc(p.name)}"
+        aria-label="${esc(ROLE_TH[r.name] || r.name)}: ${esc(label)}"
+        ${granted.has(`${r.id}-${p.id}`) ? 'checked' : ''}></td>`).join('')}
+    </tr>`;
+  };
+  const body = PERM_GROUPS.map((g) => {
+    const list = permissions.filter((p) => info(p)[0] === g);
+    return list.length
+      ? `<tr class="grp"><td colspan="${roles.length + 1}">${g}</td></tr>` + list.map(row).join('') : '';
+  }).join('');
 
   $('#content').innerHTML = `
-    <h2>สิทธิ์ของแต่ละ Role (ACL)</h2>
-    <p class="muted">ติ๊กเพื่อให้สิทธิ์ ยกเลิกเพื่อถอนสิทธิ์ มีผลทันทีโดยไม่ต้องรีสตาร์ต Server</p>
-    <div class="table-wrap">
+    <h2>สิทธิ์ของแต่ละบทบาท</h2>
+    <p class="muted">ติ๊กเพื่อให้บทบาทนั้นทำสิ่งนี้ได้ ยกเลิกติ๊กเพื่อถอนสิทธิ์ มีผลทันที ไม่ต้องรีสตาร์ต Server</p>
+    <div class="table-wrap acl-wrap">
       <table class="matrix">
-        <thead><tr><th>Permission</th>${roles.map((r) => `<th>${esc(r.name)}</th>`).join('')}</tr></thead>
-        <tbody>${permissions.map((p) => `<tr>
-          <td><code>${esc(p.name)}</code><div class="muted small">${esc(p.description)}</div></td>
-          ${roles.map((r) => `<td><input type="checkbox" data-role="${r.id}" data-perm="${p.id}"
-            ${granted.has(`${r.id}-${p.id}`) ? 'checked' : ''}></td>`).join('')}
-        </tr>`).join('')}</tbody>
+        <thead><tr><th>ทำอะไรได้บ้าง</th>${roles.map((r) =>
+          `<th>${esc(ROLE_TH[r.name] || r.name)}<small>${esc(r.name)}</small></th>`).join('')}</tr></thead>
+        <tbody>${body}</tbody>
       </table>
     </div>
 
-    <h2 class="mt">เพิ่ม Permission ใหม่</h2>
-    <form id="permForm" class="row wrap">
-      <input name="name" placeholder="เช่น equipment.read" required>
-      <input name="description" placeholder="คำอธิบาย">
-      <button>เพิ่ม</button>
-    </form>
-    <p class="muted">Permission ใหม่จะป้องกันอะไรจริงก็ต่อเมื่อ Route ในโค้ดเรียกใช้ requirePermission ด้วยชื่อนั้น</p>`;
+    <details class="ann-form">
+      <summary>สำหรับนักพัฒนา: เพิ่มรายการสิทธิ์ใหม่</summary>
+      <form id="permForm" class="row wrap" style="margin-top:12px">
+        <input name="name" placeholder="เช่น equipment.read" required>
+        <input name="description" placeholder="คำอธิบาย">
+        <button>เพิ่ม</button>
+      </form>
+      <p class="muted">สิทธิ์ใหม่จะป้องกันอะไรจริงก็ต่อเมื่อ Route ในโค้ดเรียกใช้ requirePermission ด้วยชื่อนั้น</p>
+    </details>`;
 
   $('#permForm').onsubmit = (e) => {
     e.preventDefault();
     run(() => api('/admin/permissions', { method: 'POST', body: formData(e.target) }), renderAcl);
   };
 
-  $('#content').onchange = (e) => {
+  $('#content').onchange = async (e) => {
     const cb = e.target;
     if (cb.type !== 'checkbox') return;
+    if (!cb.checked && cb.dataset.rname === 'admin' && LOCKOUT.includes(cb.dataset.pname)
+        && !confirm('การถอนสิทธิ์นี้ของผู้ดูแลระบบอาจทำให้คุณเข้าหน้าจัดการระบบไม่ได้อีก ต้องการถอนจริงหรือไม่')) {
+      cb.checked = true;
+      return;
+    }
     const role_id = Number(cb.dataset.role);
     const permission_id = Number(cb.dataset.perm);
-    run(() => (cb.checked
-      ? api('/admin/acl', { method: 'POST', body: { role_id, permission_id } })
-      : api(`/admin/acl/${role_id}/${permission_id}`, { method: 'DELETE' })), renderAcl);
+    try {
+      await (cb.checked
+        ? api('/admin/acl', { method: 'POST', body: { role_id, permission_id } })
+        : api(`/admin/acl/${role_id}/${permission_id}`, { method: 'DELETE' }));
+      toast('บันทึกสิทธิ์แล้ว');
+    } catch (err) {
+      cb.checked = !cb.checked;
+      toast(err.message, 'error');
+    }
   };
 }
 
@@ -275,7 +416,7 @@ async function renderLogs() {
 
   $('#logForm').onsubmit = (e) => {
     e.preventDefault();
-    load().catch((err) => alert(err.message));
+    load().catch((err) => toast(err.message, 'error'));
   };
   await load();
 }
@@ -394,4 +535,4 @@ async function renderProperty() {
   };
 }
 
-openTab('users');
+openTab('overview');
