@@ -26,7 +26,7 @@ function canView(user, perms, r) {
 // เงื่อนไขเจ้าของสำหรับการกระทำ เช่น ช่างทำได้เฉพาะงานของตน
 // scope มาจากตาราง TRANSITIONS ใน routes/requests.js
 // 'dept' = อนุมัติ/มอบหมายได้เฉพาะเรื่องในฝ่ายตน, 'technician' = เริ่ม/ปิดงานได้เฉพาะงานที่ได้รับมอบหมาย,
-// 'requester' = ยกเลิกเพื่อแก้ไข/ยืนยันปิดได้เฉพาะเรื่องที่ตนแจ้ง
+// 'requester' = ยืนยันปิดได้เฉพาะเรื่องที่ตนแจ้ง
 function inScope(scope, user, perms, r) {
   if (perms.has('request.read.all')) return true;
   switch (scope) {
@@ -37,15 +37,12 @@ function inScope(scope, user, perms, r) {
   }
 }
 
-// SQL: ไฟล์นี้ยังลบได้ตามกติกาสถานะหรือไม่ (ใช้กับ alias a = attachments) จริงเมื่อ
-// - เรื่องอยู่ในสถานะ cancelled (ผู้แจ้งยกเลิกเพื่อแก้ไข จึงลบไฟล์ที่แนบผิดแล้วแนบใหม่ได้ก่อนส่งอีกครั้ง) หรือ
-// - ไฟล์ถูกอัปโหลดหลังการเปลี่ยนสถานะครั้งล่าสุด
-const STATUS_UNCHANGED_SQL = `((SELECT rr.status FROM repair_requests rr WHERE rr.id = a.request_id) = 'cancelled'
-  OR a.created_at >= (SELECT MAX(h.changed_at) FROM request_status_history h WHERE h.request_id = a.request_id))`;
+// SQL: ไฟล์ถูกอัปโหลดหลังการเปลี่ยนสถานะครั้งล่าสุดหรือไม่ (ใช้กับ alias a = attachments)
+const STATUS_UNCHANGED_SQL = `a.created_at >= (SELECT MAX(h.changed_at) FROM request_status_history h WHERE h.request_id = a.request_id)`;
 
 // ลบไฟล์แนบได้เมื่อ
 // - มี attachment.delete: ไฟล์ของตน หรือมีสิทธิ์ดูทั้งหมด
-// - หรือมี attachment.upload: เฉพาะไฟล์ที่ตนอัปโหลด และงานยังไม่เปลี่ยนสถานะหลังอัปโหลด หรืออยู่ระหว่างยกเลิกเพื่อแก้ไข
+// - หรือมี attachment.upload: เฉพาะไฟล์ที่ตนอัปโหลด และงานยังไม่เปลี่ยนสถานะหลังอัปโหลด (แนบผิดแล้วลบใหม่ได้)
 function canDeleteAttachment(user, perms, a) {
   if (perms.has('attachment.delete') && (a.uploaded_by === user.id || perms.has('request.read.all'))) return true;
   return perms.has('attachment.upload') && a.uploaded_by === user.id && a.status_unchanged === true;
