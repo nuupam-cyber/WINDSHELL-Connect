@@ -400,6 +400,8 @@ function pickerHtml(r, techs) {
 }
 
 // ===== รายละเอียดและการดำเนินการ =====
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
 async function openDetail(id) {
   const r = await api(`/requests/${id}`);
   const techs = can('request.assign') && r.status === 'pending' ? await api('/requests/technicians') : [];
@@ -426,6 +428,15 @@ async function openDetail(id) {
       <dt>วันที่แจ้ง</dt><dd>${fmtDate(r.created_at)}</dd>
     </dl>
 
+    <h3>ไฟล์แนบ</h3>
+    <ul class="files" id="fileList">${(r.attachments || []).map((f) => `
+      <li><a href="/api/attachments/${f.id}" target="_blank" rel="noopener">${esc(f.original_name)}</a>
+        <span class="muted small">${fmtSize(f.size_bytes)}</span>
+        <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
+        ${can('attachment.delete') ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
+    ${can('attachment.upload') ? `<label class="file-up">แนบไฟล์ (JPG, PNG หรือ PDF ไม่เกิน 5 MB)
+      <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>` : ''}
+
     <h3>ประวัติการดำเนินการ</h3>
     <ul class="timeline">${r.history.map((h) => `
       <li><b>${STATUS[h.to_status]}</b> · ${withPos(h.changed_by)} ·
@@ -442,7 +453,33 @@ ${showNote ? `<label class="note-field">หมายเหตุ <span class="mu
       </div>` : ''}
     <p id="detailMsg" class="error"></p>`;
 
+  const fileIn = $('#fileIn');
+  if (fileIn) fileIn.onchange = async () => {
+    const f = fileIn.files[0];
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) { $('#detailMsg').textContent = 'ไฟล์ใหญ่เกิน 5 MB'; fileIn.value = ''; return; }
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+      await api(`/requests/${id}/attachments`, { method: 'POST', body: fd });
+      toast('อัปโหลดไฟล์แล้ว');
+      await openDetail(id);
+    } catch (err) {
+      $('#detailMsg').textContent = err.message;
+      fileIn.value = '';
+    }
+  };
+
   $('#detail').onclick = async (e) => {
+    const del = e.target.closest('[data-delfile]');
+    if (del) {
+      if (!(await confirmBox({ title: 'ลบไฟล์แนบ', message: 'ไฟล์นี้จะถูกลบถาวร ต้องการดำเนินการต่อหรือไม่', ok: 'ลบไฟล์', danger: true }))) return;
+      try {
+        await api(`/attachments/${del.dataset.delfile}`, { method: 'DELETE' });
+        await openDetail(id);
+      } catch (err) { $('#detailMsg').textContent = err.message; }
+      return;
+    }
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const noteEl = $('#actNote');

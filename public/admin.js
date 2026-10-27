@@ -547,10 +547,15 @@ async function renderCategories() {
 
 // ===== Log =====
 async function renderLogs() {
+  const logUsers = await api('/admin/users').catch(() => []);
   $('#content').innerHTML = `
     <form id="logForm" class="row wrap">
       <input type="date" name="from" title="ตั้งแต่วันที่">
       <input type="date" name="to" title="ถึงวันที่">
+      <select name="user_id" title="ผู้ใช้">
+        <option value="">ทุกผู้ใช้</option>
+        ${logUsers.map((u) => `<option value="${u.id}">${esc(u.name)} (${esc(u.username)})</option>`).join('')}
+      </select>
       <select name="result">
         <option value="">ทุกผลลัพธ์</option>
         <option value="success">success</option>

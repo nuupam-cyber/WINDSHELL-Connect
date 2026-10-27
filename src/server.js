@@ -7,6 +7,7 @@ const session = require('express-session');
 const path = require('path');
 const db = require('./db');
 const { HttpError } = require('./middleware/errorHandler');
+const { audit } = require('./logger');
 const { authenticate, invalidateUser, requirePermission } = require('./middleware/auth');
 
 const bcrypt = require('bcrypt');
@@ -18,6 +19,13 @@ app.set('trust proxy', 1);
 // 2. Middleware อ่าน Body
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ต้องตั้ง SESSION_SECRET ใน production (ไม่ฝังค่าลับไว้ในโค้ด)
+const SESSION_SECRET = process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? null : 'dev-only-secret');
+if (!SESSION_SECRET) {
+  console.error('ไม่ได้ตั้งค่า SESSION_SECRET: กรุณาตั้งค่าใน Environment ก่อนเริ่มระบบ');
+  process.exit(1);
+}
 
 // 3. Session: เก็บใน Postgres เพื่อไม่ให้ผู้ใช้ถูกเด้งออกทุกครั้งที่ server restart/deploy
 // (ต้อง npm install connect-pg-simple; ถ้ายังไม่ติดตั้งจะใช้ MemoryStore ไปก่อน)
@@ -31,7 +39,7 @@ try {
 app.use(session({
   store,
   name: 'sid', // ให้ตรงกับ res.clearCookie('sid') ใน routes/auth.js
-  secret: process.env.SESSION_SECRET || 'default_secret_key',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   proxy: true,
@@ -78,6 +86,7 @@ app.patch('/api/account/profile', authenticate, async (req, res) => {
   if (!name || name.length > 100) throw new HttpError(400, 'กรุณากรอกชื่อ (ไม่เกิน 100 ตัวอักษร)');
   await db.query('UPDATE users SET name = $1 WHERE id = $2', [name, req.user.id]);
   invalidateUser(req.user.id);
+  await audit(req, { eventType: 'profile_update', resourceType: 'user', resourceId: req.user.id, result: 'success', detail: 'name' });
   res.json({ ok: true, name });
 });
 
@@ -88,9 +97,13 @@ app.post('/api/account/password', authenticate, async (req, res) => {
   }
   const { rows: [u] } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
   const ok = u && typeof current_password === 'string' && await bcrypt.compare(current_password, u.password_hash);
-  if (!ok) throw new HttpError(400, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
+  if (!ok) {
+    await audit(req, { eventType: 'password_change', resourceType: 'user', resourceId: req.user.id, result: 'failure', detail: 'wrong current password' });
+    throw new HttpError(400, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
+  }
   if (current_password === new_password) throw new HttpError(400, 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม');
   await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(new_password, 12), req.user.id]);
+  await audit(req, { eventType: 'password_change', resourceType: 'user', resourceId: req.user.id, result: 'success' });
   res.json({ ok: true });
 });
 
@@ -150,7 +163,7 @@ app.post('/api/announcements/:id/cancel', authenticate, async (req, res, next) =
 const crypto = require('crypto');
 const REF_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // ตัดตัวที่สับสน I L O 0 1
 function refCode(id) {
-  const h = crypto.createHmac('sha256', process.env.REF_SECRET || process.env.SESSION_SECRET || 'default_secret_key')
+  const h = crypto.createHmac('sha256', process.env.REF_SECRET || SESSION_SECRET)
     .update(`request:${id}`).digest();
   let out = '';
   for (let i = 0; i < 8; i++) out += REF_CHARS[h[i] % REF_CHARS.length];
