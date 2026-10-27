@@ -261,6 +261,12 @@ const PORT = process.env.PORT || 3000;
   } catch (e) {
     console.error('เพิ่มคอลัมน์ data ไม่สำเร็จ:', e.message);
   }
+  // เลิกใช้ฟังก์ชันความคิดเห็นแล้ว ลบสิทธิ์ที่ไม่ได้ผูกกับ API ใดออก (role_permissions ลบตามด้วย CASCADE)
+  try {
+    await db.query("DELETE FROM permissions WHERE name = 'comment.create'");
+  } catch (e) {
+    console.error('ลบสิทธิ์ comment.create ไม่สำเร็จ:', e.message);
+  }
   setInterval(() => db.query('SELECT 1').catch(() => {}), 4 * 60 * 1000).unref();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);

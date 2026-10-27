@@ -434,6 +434,7 @@ async function openDetail(id) {
   if (r.status === 'pending' && !r.technician_id && can('request.cancel.own') && mine('requester_id')) acts.push(['delete', 'ลบเรื่องนี้', 'danger']);
 
   const showNote = r.status === 'pending' && acts.some(([x]) => x === 'assign' || x === 'reject');
+  const showWorkNote = acts.some(([x]) => x === 'complete');
   $('#detail').innerHTML = `
     <h2>${esc(r.title)} <span class="refno">${refOf(r)}</span></h2>
     <span class="badge s-${r.status}">${STATUS[r.status]}</span>
@@ -452,7 +453,7 @@ async function openDetail(id) {
         <span class="muted small">${fmtSize(f.size_bytes)}</span>
         <a class="small" href="/api/attachments/${f.id}?download=1">ดาวน์โหลด</a>
         ${can('attachment.delete') ? `<button type="button" class="link-btn small" data-delfile="${f.id}">ลบ</button>` : ''}</li>`).join('') || '<li class="muted">ยังไม่มีไฟล์แนบ</li>'}</ul>
-    ${can('attachment.upload') ? `<label class="file-up">แนบไฟล์ (JPG, PNG หรือ PDF ไม่เกิน 5 MB)
+    ${can('attachment.upload') && !(r.status === 'assigned' && mine('technician_id')) ? `<label class="file-up">แนบไฟล์ (JPG, PNG หรือ PDF ไม่เกิน 5 MB)
       <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"></label>` : ''}
 
     <h3>ประวัติการดำเนินการ</h3>
@@ -466,6 +467,8 @@ async function openDetail(id) {
         ${techs.length ? pickerHtml(r, techs) : ''}
 ${showNote ? `<label class="note-field">หมายเหตุ <span class="muted small">ไม่บังคับเมื่ออนุมัติ · <b>จำเป็นเมื่อไม่อนุมัติ</b></span>
           <textarea id="actNote" rows="2" maxlength="500" placeholder="เช่น เหตุผลที่ไม่อนุมัติ หรือข้อความถึงผู้รับผิดชอบ"></textarea></label>` : ''}
+${showWorkNote ? `<label class="note-field">รายละเอียดงานที่ทำ <span class="muted small"><b>จำเป็น</b> · ผู้แจ้งจะเห็นในประวัติการดำเนินการ</span>
+          <textarea id="actNote" rows="3" maxlength="1000" placeholder="เช่น เปลี่ยนลูกบิดประตูใหม่ ทดสอบล็อกแล้วใช้งานได้ปกติ"></textarea></label>` : ''}
         ${acts.map(([a, label, kind]) =>
           `<button class="${kind}" data-act="${a}">${label}</button>`).join('')}
       </div>` : ''}
@@ -513,6 +516,11 @@ ${showNote ? `<label class="note-field">หมายเหตุ <span class="mu
     }
     const noteEl = $('#actNote');
     const body = { note: noteEl?.value.trim() || undefined };
+    if (b.dataset.act === 'complete' && !body.note) {
+      $('#detailMsg').textContent = 'กรุณากรอกรายละเอียดงานที่ทำก่อนกดดำเนินการเสร็จ';
+      noteEl?.focus();
+      return;
+    }
     if (b.dataset.act === 'reject' && !body.note) {
       $('#detailMsg').textContent = 'กรุณาระบุเหตุผลในช่องหมายเหตุก่อนกดไม่อนุมัติ';
       noteEl?.focus();
@@ -533,7 +541,6 @@ ${showNote ? `<label class="note-field">หมายเหตุ <span class="mu
     }
   };
 
-    await loadComments(id);
   $('#modal').classList.remove('hidden');
 }
 
@@ -609,45 +616,6 @@ async function loadDashboard() {
   }).join('');
 }
 
-// ===== ความคิดเห็น =====
-async function loadComments(id) {
-  const box = document.createElement('div');
-  box.id = 'commentBox';
-  box.innerHTML = `
-    <h3>ความคิดเห็น</h3>
-    <div id="commentList"></div>
-    ${can('comment.create') ? `
-      <form id="commentForm" class="row" style="margin-top:10px">
-        <input name="body" maxlength="500" placeholder="พิมพ์ความคิดเห็น" required>
-        <button>ส่ง</button>
-      </form>` : ''}`;
-  $('#detail').appendChild(box);
-
-  const render = async () => {
-    const list = await api(`/requests/${id}/comments`);
-    $('#commentList').innerHTML = list.length
-      ? list.map((c) => `
-          <div class="comment">
-            <b>${withPos(c.author)}</b> <span class="muted small">${fmtDate(c.created_at)}</span>
-            <div>${esc(c.body)}</div>
-          </div>`).join('')
-      : '<p class="muted">ยังไม่มีความคิดเห็น</p>';
-  };
-  await render();
-
-  $('#commentForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await api(`/requests/${id}/comments`, {
-        method: 'POST', body: { body: new FormData(e.target).get('body') },
-      });
-      e.target.reset();
-      await render();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  });
-}
 // ===== ประกาศ =====
 const ANN_ICON = { elevator: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M12 3v18M8.2 9.8L10 8l1.8 1.8M13.4 14.2L15 16l1.6-1.8"/></svg>', maintenance: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/></svg>', water: '<svg viewBox="0 0 24 24"><path d="M12 2.7l5.7 5.7a8 8 0 1 1-11.4 0z"/></svg>', electric: '<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>', aircon: '<svg viewBox="0 0 24 24"><path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M19.1 4.9L4.9 19.1"/></svg>', general: '<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15.5 8.5a5 5 0 0 1 0 7"/></svg>' };
 const ANN_LABEL = { elevator: 'ลิฟต์', maintenance: 'บำรุงรักษา', water: 'ประปา', electric: 'ไฟฟ้า', aircon: 'เครื่องปรับอากาศ', general: 'ทั่วไป' };

@@ -39,7 +39,7 @@ const TRANSITIONS = {
   reject:   { from: ['pending'],     to: 'rejected',    permission: 'request.approve',       scope: 'dept',       noteRequired: true },
   assign:   { from: ['pending'],     to: 'assigned',    permission: 'request.assign',        scope: 'dept' },
   start:    { from: ['assigned'],    to: 'in_progress', permission: 'request.update_status', scope: 'technician' },
-  complete: { from: ['in_progress'], to: 'done',        permission: 'request.update_status', scope: 'technician' },
+  complete: { from: ['in_progress'], to: 'done',        permission: 'request.update_status', scope: 'technician', noteRequired: true },
   confirm:  { from: ['done'],        to: 'closed',      permission: 'request.close',         scope: 'requester' },
   cancel:   { from: ['pending'],     to: 'cancelled',   permission: 'request.cancel.own',    scope: 'requester' },
 };
@@ -244,34 +244,6 @@ router.get('/stats', requirePermission('dashboard.view'), async (req, res) => {
   });
 });
 
-// ความคิดเห็นของรายการ
-router.get('/:id/comments', async (req, res) => {
-  const id = parseId(req.params.id);
-  const { rows: [r] } = await db.query('SELECT * FROM repair_requests WHERE id = $1', [id]);
-  if (!r || !canView(req.user, req.permissions, r)) throw new HttpError(404, 'ไม่พบรายการ');
-
-  const { rows } = await db.query(
-    `SELECT c.id, c.body, c.created_at, u.name AS author
-     FROM request_comments c JOIN users u ON u.id = c.user_id
-     WHERE c.request_id = $1 ORDER BY c.created_at, c.id`, [id]);
-  res.json(rows);
-});
-
-router.post('/:id/comments', requirePermission('comment.create'), async (req, res) => {
-  const id = parseId(req.params.id);
-  const body = String(req.body.body ?? '').trim();
-  if (!body || body.length > 500) throw new HttpError(400, 'ข้อความต้องไม่ว่างและไม่เกิน 500 ตัวอักษร');
-
-  const { rows: [r] } = await db.query('SELECT * FROM repair_requests WHERE id = $1', [id]);
-  if (!r || !canView(req.user, req.permissions, r)) throw new HttpError(404, 'ไม่พบรายการ');
-
-  await db.query(
-    'INSERT INTO request_comments (request_id, user_id, body) VALUES ($1, $2, $3)',
-    [id, req.user.id, body]);
-  await audit(req, { eventType: 'comment_create', resourceType: 'repair_request', resourceId: id, result: 'success' });
-  res.status(201).json({ ok: true });
-});
-
 // รายละเอียด พร้อมประวัติสถานะและไฟล์แนบ
 router.get('/:id', async (req, res) => {
   const id = parseId(req.params.id);
@@ -344,7 +316,10 @@ async function runTransition(req, res, action) {
   const rule = TRANSITIONS[action];
   const id = parseId(req.params.id);
   const note = typeof req.body.note === 'string' ? req.body.note.trim() || null : null;
-  if (rule.noteRequired && !note) throw new HttpError(400, 'กรุณาระบุเหตุผล');
+  if (rule.noteRequired && !note) {
+    throw new HttpError(400, action === 'complete' ? 'กรุณากรอกรายละเอียดงานที่ทำ' : 'กรุณาระบุเหตุผล');
+  }
+  if (note && note.length > 1000) throw new HttpError(400, 'รายละเอียดยาวเกิน 1000 ตัวอักษร');
 
   const updated = await withTransaction(async (client) => {
     const { rows: [r] } = await client.query('SELECT * FROM repair_requests WHERE id = $1 FOR UPDATE', [id]);
