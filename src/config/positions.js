@@ -18,9 +18,23 @@ const ROLE_POSITIONS = {
   resident: [],
 };
 
+// POSITION_DEPT: ฝ่ายประจำของแต่ละตำแหน่ง (ชื่อฝ่ายตามตาราง departments)
+// เลือกตำแหน่งแล้วระบบตั้งฝ่ายให้เอง ไม่ต้องเลือกแยก ผู้ดูแลระบบไม่มีฝ่าย จึงไม่อยู่ในรายการนี้
+// ตำแหน่งที่ไม่อยู่ในรายการ (เช่น ตำแหน่งของ Role ที่เพิ่มผ่านเว็บ) ยังเลือกฝ่ายเองได้เหมือนเดิม
+const POSITION_DEPT = {
+  'หัวหน้าฝ่ายช่างอาคาร': 'ช่างอาคาร',
+  'ช่างไฟฟ้า': 'ช่างอาคาร', 'ช่างประปา': 'ช่างอาคาร', 'ช่างแอร์': 'ช่างอาคาร', 'ช่างลิฟต์': 'ช่างอาคาร',
+  'ช่างประตูและกุญแจ': 'ช่างอาคาร', 'ช่างทั่วไป': 'ช่างอาคาร',
+  'หัวหน้าฝ่ายนิติบุคคล': 'นิติบุคคล',
+  'เจ้าหน้าที่ระบบดิจิทัล': 'นิติบุคคล', 'เจ้าหน้าที่ความสะอาด': 'นิติบุคคล',
+  'เจ้าหน้าที่รักษาความปลอดภัย': 'นิติบุคคล', 'เจ้าหน้าที่ธุรการนิติบุคคล': 'นิติบุคคล',
+};
+// deptNameFor('ช่างไฟฟ้า') → 'ช่างอาคาร' (ไม่มีในรายการคืน undefined)
+const deptNameFor = (position) => POSITION_DEPT[position];
+
 // positionsFor('technician') → รายการตำแหน่งของ Role นั้น
 // Role ที่เพิ่มผ่านเว็บ → [คำอธิบายของ Role] (ไม่มีคำอธิบายคืน [])
 const positionsFor = (roleName, description) =>
   ROLE_POSITIONS[roleName] || (description ? [String(description).trim().slice(0, 100)] : []);
 
-module.exports = { ROLE_POSITIONS, positionsFor };
+module.exports = { ROLE_POSITIONS, POSITION_DEPT, deptNameFor, positionsFor };

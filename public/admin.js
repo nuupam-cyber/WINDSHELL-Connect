@@ -252,6 +252,11 @@ async function renderUsers() {
     `<option value="${d.id}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
   // ตำแหน่งผูกกับ Role: ตัวเลือกมาจาก positions ของ Role นั้น (server ส่งมากับ /admin/roles และตรวจซ้ำตอนบันทึก)
   // ตำแหน่งเดิมที่ไม่อยู่ในรายการ (ข้อมูลเก่า) แสดงเป็นตัวเลือก "(เดิม)" ไว้ ไม่หายเอง
+  // ฝ่ายผูกกับตำแหน่ง: ตำแหน่งที่มีฝ่ายประจำ → คืน id ฝ่าย (ไม่มีคืน undefined) ข้อมูลมาจาก position_depts ของ /admin/roles
+  const deptIdOfPosition = (roleId, pos) => {
+    const name = roles.find((r) => r.id === Number(roleId))?.position_depts?.[pos];
+    return name ? depts.find((d) => d.name === name)?.id : undefined;
+  };
   const positionsOf = (roleId) => roles.find((r) => r.id === Number(roleId))?.positions || [];
   const posOpts = (roleId, cur) => {
     const list = positionsOf(roleId);
@@ -287,7 +292,7 @@ async function renderUsers() {
             ? `<select data-pos="${u.id}" data-name="${esc(u.name)}" aria-label="ตำแหน่ง">${posOpts(u.role_id, u.position)}</select>`
             : '<span class="muted">—</span>'}</td>
           <td><select data-field="role_id" data-id="${u.id}">${roleOpts(u.role_id)}</select></td>
-          <td><select data-field="department_id" data-id="${u.id}">${deptOpts(u.department_id)}</select></td>
+          <td><select data-field="department_id" data-id="${u.id}" ${deptIdOfPosition(u.role_id, u.position) !== undefined ? 'disabled title="ฝ่ายกำหนดตามตำแหน่ง"' : ''}>${deptOpts(u.department_id)}</select></td>
           <td><span class="badge ${u.is_active ? 's-done' : 's-cancelled'}">${u.is_active ? 'ใช้งาน' : 'ปิดแล้ว'}</span></td>
           <td><button class="small ${u.is_active ? 'warn' : 'good'}" data-toggle="${u.id}" data-active="${u.is_active}">
             ${u.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button>
@@ -297,11 +302,25 @@ async function renderUsers() {
       </table>
     </div>`;
 
+  // ฝ่ายผูกกับตำแหน่ง: เลือกตำแหน่งที่มีฝ่ายประจำแล้วช่องฝ่ายถูกตั้งและล็อกให้ (server ตั้งซ้ำตอนบันทึกตำแหน่ง)
+  const syncNewDept = () => {
+    const form = $('#userForm');
+    const id = deptIdOfPosition(form.role_id.value, form.position.value);
+    const wasLocked = form.department_id.disabled;
+    form.department_id.disabled = id !== undefined;
+    form.department_id.title = id !== undefined ? 'ฝ่ายกำหนดตามตำแหน่ง' : '';
+    if (id !== undefined) form.department_id.value = String(id);
+    else if (wasLocked) form.department_id.value = ''; // ปลดล็อกแล้วเริ่มใหม่ ให้เลือกฝ่ายเอง
+  };
+  $('#userForm').position.onchange = syncNewDept;
+
   $('#userForm').onsubmit = (e) => {
     e.preventDefault();
     const f = formData(e.target);
     const position = (f.position || '').trim();
     delete f.position;
+    // ช่องฝ่ายที่ล็อกอยู่ไม่ถูกส่งมากับฟอร์ม จึงคำนวณจากตำแหน่ง
+    f.department_id = deptIdOfPosition(f.role_id, position) ?? f.department_id;
     run(async () => {
       await api('/admin/users', { method: 'POST', body: {
         ...f, name: f.name.trim(), role_id: Number(f.role_id), department_id: nullable(f.department_id),
@@ -315,7 +334,7 @@ async function renderUsers() {
   };
 
   // ฟอร์มเพิ่มผู้ใช้: เปลี่ยน Role แล้วรายการตำแหน่งเปลี่ยนตาม
-  $('#userForm').role_id.onchange = (e) => { $('#newPosition').innerHTML = posOpts(e.target.value, null); };
+  $('#userForm').role_id.onchange = (e) => { $('#newPosition').innerHTML = posOpts(e.target.value, null); syncNewDept(); };
 
   // เปลี่ยนตำแหน่งในตาราง → PATCH /admin/users/:id/profile (ส่งชื่อเดิมไปด้วย) / เปลี่ยน Role หรือฝ่าย → PATCH /admin/users/:id
   // เปลี่ยน Role แล้วถ้าตำแหน่งเดิมไม่ตรงกับ Role ใหม่ server ล้างตำแหน่งให้ ต้องเลือกใหม่

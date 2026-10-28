@@ -18,7 +18,15 @@ const { requirePermission, requireAnyPermission, invalidateUser } = require('../
 const { HttpError } = require('../middleware/errorHandler');
 const { parseId } = require('../services/access');
 const { CODE_PERMISSIONS, OPTIONAL_PERMISSIONS, PROTECTED_ADMIN_PERMISSIONS, CODE_ROLES } = require('../config/permissions');
-const { positionsFor } = require('../config/positions');
+const { positionsFor, POSITION_DEPT, deptNameFor } = require('../config/positions');
+
+// deptIdFor: id ฝ่ายที่ผูกกับตำแหน่ง (undefined ถ้าตำแหน่งนี้ไม่ได้ผูกฝ่าย) ใช้ตั้งฝ่ายตามตำแหน่งเสมอ
+async function deptIdFor(client, position) {
+  const name = deptNameFor(position);
+  if (!name) return undefined;
+  const { rows: [d] } = await client.query('SELECT id FROM departments WHERE name = $1', [name]);
+  return d ? d.id : undefined;
+}
 
 const router = Router();
 
@@ -82,7 +90,7 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
 
     const name = b.name !== undefined ? String(b.name).trim() : cur.name;
     if (!name) throw new HttpError(400, 'กรุณาระบุชื่อ');
-    const deptId = b.department_id !== undefined ? b.department_id : cur.department_id;
+    let deptId = b.department_id !== undefined ? b.department_id : cur.department_id;
     const isActive = b.is_active !== undefined ? Boolean(b.is_active) : cur.is_active;
 
     let hash = null;
@@ -104,6 +112,8 @@ router.patch('/users/:id', requirePermission('user.manage'), async (req, res) =>
 
     // ตำแหน่งผูกกับ Role: เปลี่ยน Role แล้วตำแหน่งเดิมไม่อยู่ในรายการของ Role ใหม่ → ล้างตำแหน่ง (ไปเลือกใหม่)
     const position = positionsFor(role.name, role.description).includes(cur.position) ? cur.position : null;
+    // ตำแหน่งที่ผูกกับฝ่าย → ฝ่ายถูกกำหนดตามตำแหน่ง (ค่าที่ส่งมาถูกแทนที่)
+    deptId = (await deptIdFor(client, position)) ?? deptId;
     await client.query(
       `UPDATE users SET name = $1, role_id = $2, department_id = $3, is_active = $4,
               password_hash = COALESCE($5, password_hash), position = $6
@@ -131,7 +141,10 @@ router.patch('/users/:id/profile', requirePermission('user.manage'), async (req,
   if (position && position !== cur.position && !positionsFor(cur.role_name, cur.role_description).includes(position)) {
     throw new HttpError(400, 'ตำแหน่งนี้ไม่ตรงกับ Role ของผู้ใช้');
   }
-  await db.query('UPDATE users SET name = $1, position = $2 WHERE id = $3', [name, position || null, id]);
+  // ตั้งตำแหน่งที่ผูกกับฝ่าย → ตั้งฝ่ายตามตำแหน่งด้วย (ตำแหน่งที่ไม่ผูกฝ่ายไม่แตะฝ่ายเดิม)
+  const deptId = position ? await deptIdFor(db, position) : undefined;
+  await db.query('UPDATE users SET name = $1, position = $2, department_id = COALESCE($4, department_id) WHERE id = $3',
+    [name, position || null, id, deptId ?? null]);
   invalidateUser(id);
   await audit(req, { eventType: 'user_update', resourceType: 'user', resourceId: id, result: 'success', detail: 'name/position' });
   res.json({ ok: true });
@@ -165,7 +178,9 @@ router.get('/roles', requireAnyPermission('role.manage', 'user.manage'), async (
      FROM roles r LEFT JOIN users u ON u.role_id = r.id
      GROUP BY r.id ORDER BY r.id`);
   // positions: ตำแหน่งที่เลือกได้ของ Role นี้ หน้า Admin ใช้สร้าง dropdown ตำแหน่ง
-  res.json(rows.map((r) => ({ ...r, in_code: CODE_ROLES.includes(r.name), positions: positionsFor(r.name, r.description) })));
+  res.json(rows.map((r) => ({ ...r, in_code: CODE_ROLES.includes(r.name), positions: positionsFor(r.name, r.description),
+    // position_depts: ตำแหน่ง → ชื่อฝ่าย (หน้าเว็บใช้ตั้งช่องฝ่ายตามตำแหน่งที่เลือก)
+    position_depts: Object.fromEntries(positionsFor(r.name, r.description).filter((p) => POSITION_DEPT[p]).map((p) => [p, POSITION_DEPT[p]])) })));
 });
 
 // POST /api/admin/roles — เพิ่ม Role ใหม่ผ่านเว็บ ไม่ต้องแก้โค้ด จากนั้นไปติ๊กสิทธิ์ให้ในหน้า ACL
