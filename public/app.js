@@ -213,6 +213,9 @@ $('#loginForm').onsubmit = async (e) => {
     e.target.reset();
     $('#loginError').textContent = '';
     renderShell();
+    if(me.role === 'technician'){
+      alert('Hello World');
+    }
   } catch (err) {
     $('#loginError').textContent = err.message;
   }
